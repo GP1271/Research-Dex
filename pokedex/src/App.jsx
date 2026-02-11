@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import "./app.css";
+import { saveToCache, getFromCache } from "./offlineDB";
 
 /* ======================
    Dex tabs
@@ -20,31 +22,25 @@ const DEXES = [
 const pad3 = (n) => String(n).padStart(3, "0");
 const CURRENT_GEN = 9;
 
-/* ✅ more laptop-friendly icons */
-const TYPE_ICON = {
-  normal: "⬜",
-  fire: "🔥",
-  water: "💧",
-  grass: "🌿",
-  electric: "⚡",
-  ice: "❄️",
-  fighting: "🥊",
-  poison: "☠️",
-  ground: "⛰️",
-  flying: "🕊️", // was 🪽 (not supported on some laptops)
-  psychic: "🔮",
-  bug: "🐞",
-  rock: "🗿",   // was 🪨 (not supported on some laptops)
-  ghost: "👻",
-  dragon: "🐉",
-  dark: "🌑",
-  steel: "⚙️",
-  fairy: "🧚",
-};
+/* ======================
+   Vite base-path safe assets
+====================== */
+const BASE_URL = import.meta.env.BASE_URL || "/";
 
-const catIcon = (cat) =>
-  cat === "physical" ? "⚔️" : cat === "special" ? "✨" : "⭕";
+function assetUrl(path) {
+  const base = BASE_URL.endsWith("/") ? BASE_URL : BASE_URL + "/";
+  return base + String(path).replace(/^\//, "");
+}
+function typeIconUrl(typeName) {
+  return assetUrl(`type-icons/${typeName}.png`);
+}
+function uiIconUrl(file) {
+  return assetUrl(`ui-icons/${file}`);
+}
 
+/* ======================
+   Helpers
+====================== */
 function titleCaseSlug(v) {
   if (!v) return "";
   return v
@@ -87,7 +83,15 @@ const versionGenCache = new Map();
 function genSlugToNumber(genSlug) {
   const roman = (genSlug || "").replace("generation-", "");
   const map = {
-    i: 1, ii: 2, iii: 3, iv: 4, v: 5, vi: 6, vii: 7, viii: 8, ix: 9,
+    i: 1,
+    ii: 2,
+    iii: 3,
+    iv: 4,
+    v: 5,
+    vi: 6,
+    vii: 7,
+    viii: 8,
+    ix: 9,
   };
   return map[roman] ?? 999;
 }
@@ -261,18 +265,25 @@ const speciesDefaultPokemonCache = new Map();
 const spriteCache = new Map();
 
 // Move caches
-const moveCache = new Map();     // moveName -> move json
+const moveCache = new Map(); // moveName -> move json
 const moveMiniCache = new Map(); // moveName -> {type, dmgClass}
 
 async function fetchJsonOrNull(url) {
+  const cached = await getFromCache(url);
+  if (cached) return cached;
+
   try {
     const res = await fetch(url);
     if (!res.ok) return null;
-    return await res.json();
+    const data = await res.json();
+
+    await saveToCache(url, data);
+    return data;
   } catch {
     return null;
   }
 }
+
 
 async function pokemonExists(pokemonName) {
   if (pokemonExistsCache.has(pokemonName)) return pokemonExistsCache.get(pokemonName);
@@ -332,9 +343,7 @@ async function getSpriteForPokemonName(pokemonName, shiny) {
 async function getMoveMini(moveName) {
   if (moveMiniCache.has(moveName)) return moveMiniCache.get(moveName);
 
-  const data =
-    moveCache.get(moveName) ||
-    (await fetchJsonOrNull(`https://pokeapi.co/api/v2/move/${moveName}`));
+  const data = moveCache.get(moveName) || (await fetchJsonOrNull(`https://pokeapi.co/api/v2/move/${moveName}`));
 
   if (data) {
     moveCache.set(moveName, data);
@@ -355,37 +364,86 @@ async function getMoveMini(moveName) {
    Type chart data (Gen 6+)
 ====================== */
 const TYPES = [
-  "normal","fire","water","grass","electric","ice","fighting","poison","ground","flying",
-  "psychic","bug","rock","ghost","dragon","dark","steel","fairy",
+  "normal",
+  "fire",
+  "water",
+  "grass",
+  "electric",
+  "ice",
+  "fighting",
+  "poison",
+  "ground",
+  "flying",
+  "psychic",
+  "bug",
+  "rock",
+  "ghost",
+  "dragon",
+  "dark",
+  "steel",
+  "fairy",
 ];
 
 // multipliers: attackType -> defendType -> multiplier
-// (Standard modern chart; includes Fairy)
 const TYPE_CHART = {
-  normal:   { rock:0.5, ghost:0, steel:0.5 },
-  fire:     { fire:0.5, water:0.5, grass:2, ice:2, bug:2, rock:0.5, dragon:0.5, steel:2 },
-  water:    { fire:2, water:0.5, grass:0.5, ground:2, rock:2, dragon:0.5 },
-  grass:    { fire:0.5, water:2, grass:0.5, poison:0.5, ground:2, flying:0.5, bug:0.5, rock:2, dragon:0.5, steel:0.5 },
-  electric: { water:2, grass:0.5, electric:0.5, ground:0, flying:2, dragon:0.5 },
-  ice:      { fire:0.5, water:0.5, grass:2, ground:2, flying:2, dragon:2, steel:0.5, ice:0.5 },
-  fighting: { normal:2, ice:2, rock:2, dark:2, steel:2, poison:0.5, flying:0.5, psychic:0.5, bug:0.5, ghost:0, fairy:0.5 },
-  poison:   { grass:2, fairy:2, poison:0.5, ground:0.5, rock:0.5, ghost:0.5, steel:0 },
-  ground:   { fire:2, electric:2, poison:2, rock:2, steel:2, grass:0.5, bug:0.5, flying:0 },
-  flying:   { grass:2, fighting:2, bug:2, electric:0.5, rock:0.5, steel:0.5 },
-  psychic:  { fighting:2, poison:2, psychic:0.5, steel:0.5, dark:0 },
-  bug:      { grass:2, psychic:2, dark:2, fire:0.5, fighting:0.5, poison:0.5, flying:0.5, ghost:0.5, steel:0.5, fairy:0.5 },
-  rock:     { fire:2, ice:2, flying:2, bug:2, fighting:0.5, ground:0.5, steel:0.5 },
-  ghost:    { psychic:2, ghost:2, dark:0.5, normal:0 },
-  dragon:   { dragon:2, steel:0.5, fairy:0 },
-  dark:     { psychic:2, ghost:2, fighting:0.5, dark:0.5, fairy:0.5 },
-  steel:    { ice:2, rock:2, fairy:2, fire:0.5, water:0.5, electric:0.5, steel:0.5 },
-  fairy:    { fighting:2, dragon:2, dark:2, fire:0.5, poison:0.5, steel:0.5 },
+  normal: { rock: 0.5, ghost: 0, steel: 0.5 },
+  fire: { fire: 0.5, water: 0.5, grass: 2, ice: 2, bug: 2, rock: 0.5, dragon: 0.5, steel: 2 },
+  water: { fire: 2, water: 0.5, grass: 0.5, ground: 2, rock: 2, dragon: 0.5 },
+  grass: {
+    fire: 0.5,
+    water: 2,
+    grass: 0.5,
+    poison: 0.5,
+    ground: 2,
+    flying: 0.5,
+    bug: 0.5,
+    rock: 2,
+    dragon: 0.5,
+    steel: 0.5,
+  },
+  electric: { water: 2, grass: 0.5, electric: 0.5, ground: 0, flying: 2, dragon: 0.5 },
+  ice: { fire: 0.5, water: 0.5, grass: 2, ground: 2, flying: 2, dragon: 2, steel: 0.5, ice: 0.5 },
+  fighting: {
+    normal: 2,
+    ice: 2,
+    rock: 2,
+    dark: 2,
+    steel: 2,
+    poison: 0.5,
+    flying: 0.5,
+    psychic: 0.5,
+    bug: 0.5,
+    ghost: 0,
+    fairy: 0.5,
+  },
+  poison: { grass: 2, fairy: 2, poison: 0.5, ground: 0.5, rock: 0.5, ghost: 0.5, steel: 0 },
+  ground: { fire: 2, electric: 2, poison: 2, rock: 2, steel: 2, grass: 0.5, bug: 0.5, flying: 0 },
+  flying: { grass: 2, fighting: 2, bug: 2, electric: 0.5, rock: 0.5, steel: 0.5 },
+  psychic: { fighting: 2, poison: 2, psychic: 0.5, steel: 0.5, dark: 0 },
+  bug: {
+    grass: 2,
+    psychic: 2,
+    dark: 2,
+    fire: 0.5,
+    fighting: 0.5,
+    poison: 0.5,
+    flying: 0.5,
+    ghost: 0.5,
+    steel: 0.5,
+    fairy: 0.5,
+  },
+  rock: { fire: 2, ice: 2, flying: 2, bug: 2, fighting: 0.5, ground: 0.5, steel: 0.5 },
+  ghost: { psychic: 2, ghost: 2, dark: 0.5, normal: 0 },
+  dragon: { dragon: 2, steel: 0.5, fairy: 0 },
+  dark: { psychic: 2, ghost: 2, fighting: 0.5, dark: 0.5, fairy: 0.5 },
+  steel: { ice: 2, rock: 2, fairy: 2, fire: 0.5, water: 0.5, electric: 0.5, steel: 0.5 },
+  fairy: { fighting: 2, dragon: 2, dark: 2, fire: 0.5, poison: 0.5, steel: 0.5 },
 };
 
 function typeEffect(atk, def1, def2) {
   const row = TYPE_CHART[atk] || {};
   const m1 = row[def1] ?? 1;
-  const m2 = def2 ? (row[def2] ?? 1) : 1;
+  const m2 = def2 ? row[def2] ?? 1 : 1;
   return m1 * m2;
 }
 
@@ -409,14 +467,26 @@ export default function App() {
 
   const [openSpecies, setOpenSpecies] = useState(null);
 
-  // ✅ move type-color toggle
+  // move type-color toggle
   const [moveColorMode, setMoveColorMode] = useState(() => {
     const saved = localStorage.getItem("pdx-moveColor");
     return saved === "1";
   });
 
-  // ✅ type chart toggle
+  // type chart toggle
   const [showTypeChart, setShowTypeChart] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadOpen, setDownloadOpen] = useState(false);
+
+const [confirmClear, setConfirmClear] = useState(false);
+useEffect(() => {
+  if (!confirmClear) return;
+  const t = setTimeout(() => setConfirmClear(false), 4000); // auto-cancel after 4s
+  return () => clearTimeout(t);
+}, [confirmClear]);
+
+
 
   useEffect(() => {
     document.body.classList.toggle("light", theme === "light");
@@ -461,9 +531,11 @@ export default function App() {
         setLoading(false);
       }
     }
-
+  
     load();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [selectedDex]);
 
   const filtered = useMemo(() => {
@@ -475,10 +547,94 @@ export default function App() {
   const clampZoom = (z) => Math.max(70, Math.min(200, z));
   const bumpZoom = (delta) => setUiZoom((z) => clampZoom(z + delta));
 
+    async function downloadRegional() {
+  setDownloading(true);
+  setDownloadProgress(0);
+
+  try {
+    const res = await fetch(`https://pokeapi.co/api/v2/pokedex/${selectedDex}`);
+    const data = await res.json();
+    const entries = data.pokemon_entries;
+
+    let count = 0;
+
+    for (const e of entries) {
+      const speciesUrl = `https://pokeapi.co/api/v2/pokemon-species/${e.pokemon_species.name}`;
+      await fetchJsonOrNull(speciesUrl);
+
+      const pokeUrl = `https://pokeapi.co/api/v2/pokemon/${e.pokemon_species.name}`;
+      await fetchJsonOrNull(pokeUrl);
+
+      count++;
+      setDownloadProgress(Math.round((count / entries.length) * 100));
+    }
+  } catch (err) {
+    console.error(err);
+  }
+
+  setDownloading(false);
+}
+async function downloadGeneral() {
+  setDownloading(true);
+  setDownloadProgress(0);
+
+  try {
+    const res = await fetch(`https://pokeapi.co/api/v2/move?limit=10000`);
+    const data = await res.json();
+    const moves = data.results;
+
+    let count = 0;
+
+    for (const m of moves) {
+      await fetchJsonOrNull(m.url);
+      count++;
+      setDownloadProgress(Math.round((count / moves.length) * 100));
+    }
+  } catch (err) {
+    console.error(err);
+  }
+
+  setDownloading(false);
+}
+async function downloadAll() {
+  await downloadRegional();
+  await downloadGeneral();
+}
+async function clearOfflineCache() {
+  // localStorage (theme, zoom, etc.)
+  localStorage.removeItem("pdx-theme");
+  localStorage.removeItem("pdx-zoom");
+  localStorage.removeItem("pdx-moveColor");
+
+  // IndexedDB (if you add it later)
+  if (indexedDB?.databases) {
+    try {
+      const dbs = await indexedDB.databases();
+      for (const db of dbs) {
+        if (db?.name) indexedDB.deleteDatabase(db.name);
+      }
+    } catch {}
+  }
+
+  // Cache Storage (service worker / PWA caches, if any)
+  if (window.caches?.keys) {
+    try {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k)));
+    } catch {}
+  }
+
+  // Reload so UI reflects cleared data
+  window.location.reload();
+}
+
   return (
     <div className="wrap">
       <header className="topbar">
-        <div className="title">⚪️🔴 GAMERS Pokédex</div>
+        <div className="title">
+          <img className="pokeBallIcon" src={uiIconUrl("pokeball.png")} alt="pokeball" />
+          GAMERS Pokédex
+        </div>
 
         <input
           className="search"
@@ -493,7 +649,9 @@ export default function App() {
         </label>
 
         <div className="zoomCtl" title="Zoom (Dex only)">
-          <button className="zoomBtn" onClick={() => bumpZoom(-5)}>-</button>
+          <button className="zoomBtn" onClick={() => bumpZoom(-5)}>
+            -
+          </button>
           <input
             className="zoomInput"
             value={uiZoom}
@@ -503,7 +661,9 @@ export default function App() {
               setUiZoom(clampZoom(n));
             }}
           />
-          <button className="zoomBtn" onClick={() => bumpZoom(5)}>+</button>
+          <button className="zoomBtn" onClick={() => bumpZoom(5)}>
+            +
+          </button>
           <span className="small">%</span>
         </div>
 
@@ -530,9 +690,81 @@ export default function App() {
         >
           {theme === "dark" ? "Light" : "Dark"}
         </button>
-      </header>
 
-      {/* ✅ zoom affects ONLY this area */}
+      <div className="menuWrap">
+  <button
+    className={"themeBtn " + (downloadOpen ? "activeBtn" : "")}
+    onClick={() => setDownloadOpen((v) => !v)}
+    title="Download for offline use"
+  >
+    Download ▾
+  </button>
+
+  {downloadOpen && (
+    <div className="menuDrop" onMouseLeave={() => setDownloadOpen(false)}>
+      <button
+        className="menuItem"
+        onClick={() => {
+          setDownloadOpen(false);
+          // TODO: call your existing "download all" function here
+          // downloadAll();
+        }}
+      >
+        Download All
+      </button>
+
+      <button
+        className="menuItem"
+        onClick={() => {
+          setDownloadOpen(false);
+          // TODO: call your existing "download regional" function here
+          // downloadRegional(selectedDex);
+        }}
+      >
+        Download This Dex
+      </button>
+
+      <button
+        className="menuItem"
+        onClick={() => {
+          setDownloadOpen(false);
+          // TODO: call your existing "download current pokemon" function here
+          // downloadCurrent(openSpecies);
+        }}
+      >
+        Download Current Pokémon
+      </button>
+    </div>
+  )}
+</div>
+
+<button
+  className={"themeBtn " + (confirmClear ? "dangerBtn" : "")}
+  onClick={() => {
+    if (!confirmClear) {
+      setConfirmClear(true);
+      return;
+    }
+    setConfirmClear(false);
+    clearOfflineCache();
+  }}
+  title="Clear downloaded data and settings"
+>
+  {confirmClear ? "Confirm Delete" : "Delete Cache"}
+</button>
+
+      </header>
+      {downloading && (
+  <div className="downloadBarWrap">
+    <div
+      className="downloadBarFill"
+      style={{ width: `${downloadProgress}%` }}
+    />
+  </div>
+)}
+
+
+      {/* zoom affects ONLY this area */}
       <div className="dexZoomArea" style={{ zoom: uiZoom / 100 }}>
         <div className="tabs">
           {DEXES.map((d) => (
@@ -576,9 +808,7 @@ export default function App() {
         />
       )}
 
-      {showTypeChart && (
-        <TypeChartCard onClose={() => setShowTypeChart(false)} />
-      )}
+      {showTypeChart && <TypeChartCard onClose={() => setShowTypeChart(false)} />}
     </div>
   );
 }
@@ -620,18 +850,16 @@ function PokemonCard({ species, entryNumber, dexKey, shiny, onOpen }) {
     }
 
     load();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [species, dexKey, shiny]);
 
   return (
     <article className={`card clickable typeFrame type-${primaryType}`} onClick={onOpen}>
       <div className="num">#{pad3(entryNumber)}</div>
       <div className="name">{titleCaseSlug(displayName)}</div>
-      {sprite ? (
-        <img className="sprite" src={sprite} alt={displayName} />
-      ) : (
-        <div className="sprite ph" />
-      )}
+      {sprite ? <img className="sprite" src={sprite} alt={displayName} /> : <div className="sprite ph" />}
     </article>
   );
 }
@@ -666,16 +894,16 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
   const displayPokemonName = selectedForm || selectedVariant;
 
   // Movepool state
-  const [movesOpen, setMovesOpen] = useState(false); // ✅ default minimized
+  const [movesOpen, setMovesOpen] = useState(false);
   const [moveGen, setMoveGen] = useState("all");
   const [moveSearch, setMoveSearch] = useState("");
   const [movesReady, setMovesReady] = useState(false);
   const [movesByMethod, setMovesByMethod] = useState({
     "level-up": [],
-    "machine": [],
-    "tutor": [],
-    "egg": [],
-    "other": [],
+    machine: [],
+    tutor: [],
+    egg: [],
+    other: [],
   });
 
   // Move popup
@@ -728,10 +956,10 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
     setMovesReady(false);
     setMovesByMethod({
       "level-up": [],
-      "machine": [],
-      "tutor": [],
-      "egg": [],
-      "other": [],
+      machine: [],
+      tutor: [],
+      egg: [],
+      other: [],
     });
 
     setMovePopupOpen(false);
@@ -771,7 +999,8 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
           return a.v.localeCompare(b.v);
         });
         const sortedVersions = metas.map((m) => m.v);
-        const defaultV = sortedVersions[sortedVersions.length - 1] || "";
+        const defaultV = sortedVersions[0] || "";
+
 
         if (!alive) return;
         setEntryMap(map);
@@ -781,32 +1010,29 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
         const basePoke = await fetchJsonOrNull(`https://pokeapi.co/api/v2/pokemon/${baseName}`);
         if (basePoke) pokemonCache.set(baseName, basePoke);
 
-        // Variant/form lists
+        // Variant/form lists (ONLY include real /pokemon/ names so clicking never crashes)
         (async () => {
           try {
-            const varieties = (sData.varieties || []).map((v) => v.pokemon?.name).filter(Boolean);
+            const varietiesRaw = (sData.varieties || []).map((v) => v.pokemon?.name).filter(Boolean);
+            const formNamesRaw = (basePoke?.forms || []).map((f) => f.name).filter(Boolean);
+
+            const allCandidates = Array.from(new Set([...varietiesRaw, ...formNamesRaw]));
 
             const variants = [];
             const megas = [];
             const gmax = [];
             const others = [];
 
-            for (const pnm of varieties) {
+            for (const pnm of allCandidates) {
+              const ok = await pokemonExists(pnm);
+              if (!ok) continue;
+
               const label = prettyLabel(baseName, pnm);
+
               if (pnm === baseName || isRegionalVariant(pnm)) variants.push({ label, pokemonName: pnm });
               else if (isMega(pnm)) megas.push({ label, pokemonName: pnm });
               else if (isGmax(pnm)) gmax.push({ label, pokemonName: pnm });
               else others.push({ label, pokemonName: pnm });
-            }
-
-            const formNames = (basePoke?.forms || []).map((f) => f.name).filter(Boolean);
-            for (const fn of formNames) {
-              const exists =
-                variants.some((x) => x.pokemonName === fn) ||
-                megas.some((x) => x.pokemonName === fn) ||
-                gmax.some((x) => x.pokemonName === fn) ||
-                others.some((x) => x.pokemonName === fn);
-              if (!exists) others.push({ label: prettyLabel(baseName, fn), pokemonName: fn });
             }
 
             if (!variants.some((o) => o.pokemonName === baseName)) {
@@ -889,7 +1115,9 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
     }
 
     load();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [speciesName, dexKey]);
 
   // Load displayed pokemon when variant/form changes
@@ -908,10 +1136,10 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
         setMovesReady(false);
         setMovesByMethod({
           "level-up": [],
-          "machine": [],
-          "tutor": [],
-          "egg": [],
-          "other": [],
+          machine: [],
+          tutor: [],
+          egg: [],
+          other: [],
         });
 
         // close move popup
@@ -923,7 +1151,9 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
     }
 
     if (displayPokemonName) loadDisplayed();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [displayPokemonName]);
 
   async function getSpriteForName(speciesNm) {
@@ -947,10 +1177,10 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
 
       const out = {
         "level-up": [],
-        "machine": [],
-        "tutor": [],
-        "egg": [],
-        "other": [],
+        machine: [],
+        tutor: [],
+        egg: [],
+        other: [],
       };
 
       for (const m of pokemon.moves) {
@@ -987,12 +1217,17 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
 
         const method = best.move_learn_method?.name || "other";
         const bucket =
-          method === "level-up" ? "level-up" :
-          method === "machine" ? "machine" :
-          method === "tutor" ? "tutor" :
-          method === "egg" ? "egg" : "other";
+          method === "level-up"
+            ? "level-up"
+            : method === "machine"
+            ? "machine"
+            : method === "tutor"
+            ? "tutor"
+            : method === "egg"
+            ? "egg"
+            : "other";
 
-        // prefetch mini info for icons
+        // prefetch mini info for type/category
         getMoveMini(moveName);
 
         out[bucket].push({
@@ -1008,10 +1243,10 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
         if (la !== lb) return la - lb;
         return a.name.localeCompare(b.name);
       });
-      out["machine"].sort((a, b) => a.name.localeCompare(b.name));
-      out["tutor"].sort((a, b) => a.name.localeCompare(b.name));
-      out["egg"].sort((a, b) => a.name.localeCompare(b.name));
-      out["other"].sort((a, b) => a.name.localeCompare(b.name));
+      out.machine.sort((a, b) => a.name.localeCompare(b.name));
+      out.tutor.sort((a, b) => a.name.localeCompare(b.name));
+      out.egg.sort((a, b) => a.name.localeCompare(b.name));
+      out.other.sort((a, b) => a.name.localeCompare(b.name));
 
       if (!alive) return;
       setMovesByMethod(out);
@@ -1019,7 +1254,9 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
     }
 
     buildMoves();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [pokemon?.name, pokemon?.moves, moveGen, moveSearch]);
 
   // Load move details for popup
@@ -1051,7 +1288,9 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
     }
 
     loadMove();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [selectedMove]);
 
   if (loading) {
@@ -1060,7 +1299,9 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
         <div className="modal" onClick={(e) => e.stopPropagation()}>
           <div className="modalHead">
             <div className="modalTitle">Loading…</div>
-            <button className="x" onClick={onClose}>×</button>
+            <button className="x" onClick={onClose}>
+              ×
+            </button>
           </div>
           <div className="modalBody">Fetching data…</div>
         </div>
@@ -1078,10 +1319,7 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
     pokemon.sprites.front_default ||
     "";
 
-  const genus =
-    (species.genera || [])
-      .find((g) => g.language?.name === "en")
-      ?.genus || "";
+  const genus = (species.genera || []).find((g) => g.language?.name === "en")?.genus || "";
 
   const eggGroups = (species.egg_groups || []).map((e) => titleCaseSlug(e.name)).join(", ");
   const growthRate = titleCaseSlug(species.growth_rate?.name || "");
@@ -1096,20 +1334,34 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
           <div className="modalTitle">
             {titleCaseSlug(pokemon.name)} <span className="small">#{pad3(pokemon.id)}</span>
           </div>
-          <button className="x" onClick={onClose}>×</button>
+          <button className="x" onClick={onClose}>
+            ×
+          </button>
         </div>
 
         <div className="modalBody">
           <div className="row">
             <img className="spriteBig" src={sprite} alt={pokemon.name} />
             <div className="col">
+              {/* Types */}
               <div className="badges">
-                {typesSorted.map((t) => (
-                  <span key={t.type.name} className={`badge typeBadge type-${t.type.name}`}>
-                    <span className="ti">{TYPE_ICON[t.type.name] || "❔"}</span>
-                    {titleCaseSlug(t.type.name)}
-                  </span>
-                ))}
+                {typesSorted.map((t) => {
+                  const typeName = t.type.name;
+                  return (
+                    <span key={typeName} className={`badge typeBadge type-${typeName}`}>
+                      <img
+                        className="typeIconImg"
+                        src={typeIconUrl(typeName)}
+                        alt={typeName}
+                        loading="lazy"
+                        onError={(e) => {
+                          e.currentTarget.style.display = "none";
+                        }}
+                      />
+                      {titleCaseSlug(typeName)}
+                    </span>
+                  );
+                })}
               </div>
 
               {/* Variant / Form split */}
@@ -1140,7 +1392,7 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
                   <div className="vfLabel">Form:</div>
                   {vfLoading ? (
                     <div className="small">Loading…</div>
-                  ) : (megaOptions.length + gmaxOptions.length + otherFormOptions.length) === 0 ? (
+                  ) : megaOptions.length + gmaxOptions.length + otherFormOptions.length === 0 ? (
                     <div className="small">None</div>
                   ) : (
                     <select
@@ -1191,16 +1443,38 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
               </div>
 
               <div className="kv">
-                {genus ? <div><span className="k">Category:</span> {genus}</div> : null}
-                <div><span className="k">Height:</span> {(pokemon.height / 10).toFixed(1)} m</div>
-                <div><span className="k">Weight:</span> {(pokemon.weight / 10).toFixed(1)} kg</div>
-                <div><span className="k">Base EXP:</span> {pokemon.base_experience}</div>
-                <div><span className="k">Gender:</span> {genderRateToText(species.gender_rate)}</div>
-                <div><span className="k">Egg Groups:</span> {eggGroups || "—"}</div>
-                <div><span className="k">Base Happiness:</span> {species.base_happiness}</div>
-                <div><span className="k">Capture Rate:</span> {species.capture_rate}</div>
-                <div><span className="k">Growth Rate:</span> {growthRate || "—"}</div>
-                <div><span className="k">First Appeared:</span> Gen {pokemonMinGen}</div>
+                {genus ? (
+                  <div>
+                    <span className="k">Category:</span> {genus}
+                  </div>
+                ) : null}
+                <div>
+                  <span className="k">Height:</span> {(pokemon.height / 10).toFixed(1)} m
+                </div>
+                <div>
+                  <span className="k">Weight:</span> {(pokemon.weight / 10).toFixed(1)} kg
+                </div>
+                <div>
+                  <span className="k">Base EXP:</span> {pokemon.base_experience}
+                </div>
+                <div>
+                  <span className="k">Gender:</span> {genderRateToText(species.gender_rate)}
+                </div>
+                <div>
+                  <span className="k">Egg Groups:</span> {eggGroups || "—"}
+                </div>
+                <div>
+                  <span className="k">Base Happiness:</span> {species.base_happiness}
+                </div>
+                <div>
+                  <span className="k">Capture Rate:</span> {species.capture_rate}
+                </div>
+                <div>
+                  <span className="k">Growth Rate:</span> {growthRate || "—"}
+                </div>
+                <div>
+                  <span className="k">First Appeared:</span> Gen {pokemonMinGen}
+                </div>
               </div>
             </div>
           </div>
@@ -1227,7 +1501,9 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
                 >
                   <option value="all">All Gens</option>
                   {genOptions.map((g) => (
-                    <option key={g} value={String(g)}>Gen {g}</option>
+                    <option key={g} value={String(g)}>
+                      Gen {g}
+                    </option>
                   ))}
                 </select>
 
@@ -1300,11 +1576,7 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
             <div className="panelTitle dexEntryHeader">
               <span>Dex Entry</span>
               {orderedVersions.length > 0 && (
-                <select
-                  className="entrySelect"
-                  value={entryVersion}
-                  onChange={(e) => setEntryVersion(e.target.value)}
-                >
+                <select className="entrySelect" value={entryVersion} onChange={(e) => setEntryVersion(e.target.value)}>
                   {orderedVersions.map((v) => (
                     <option key={v} value={v}>
                       {titleCaseSlug(v)}
@@ -1375,7 +1647,7 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
             </div>
           </div>
 
-          {/* Move Popup */}
+          {/* Move Popup (PORTAL to body so it follows properly) */}
           {movePopupOpen && (
             <MovePopup
               moveName={selectedMove}
@@ -1436,12 +1708,7 @@ function MovesList({ movesByMethod, onPickMove }) {
             ) : (
               <div className="moveGridWrap">
                 {list.slice(0, 220).map((m) => (
-                  <MoveRow
-                    key={m.name}
-                    kind="chip"
-                    moveName={m.name}
-                    onClick={() => onPickMove(m.name)}
-                  />
+                  <MoveRow key={m.name} kind="chip" moveName={m.name} onClick={() => onPickMove(m.name)} />
                 ))}
                 {list.length > 220 && (
                   <div className="small" style={{ width: "100%" }}>
@@ -1466,26 +1733,43 @@ function MoveRow({ kind, moveName, labelLeft, labelRight, onClick }) {
       const m = await getMoveMini(moveName);
       if (alive) setMini(m);
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, [moveName]);
 
   const cat = mini.dmgClass || "status";
-  const icon = catIcon(cat);
-  const typeIcon = TYPE_ICON[mini.type] || "❔";
-
   const moveNameClass = `moveNameType moveType-${mini.type}`;
+
+  const TypePill = (
+    <span className={`badge typeBadge type-${mini.type}`}>
+      <img
+        className="typeIconImg"
+        src={typeIconUrl(mini.type)}
+        alt={mini.type}
+        loading="lazy"
+        onError={(e) => {
+          e.currentTarget.style.display = "none";
+        }}
+      />
+      {titleCaseSlug(mini.type)}
+    </span>
+  );
+
+const CatPill = (
+  <span className={`badge catMini cat-${cat}`} title={titleCaseSlug(cat)}>
+    {cat === "physical" && "⚔️ Physical"}
+    {cat === "special" && "✨ Special"}
+    {cat === "status" && "🛡️ Status"}
+  </span>
+);
+
 
   if (kind === "chip") {
     return (
       <button className="moveChip smallChip" onClick={onClick} title="Click for move details">
-        <span className={`badge typeBadge type-${mini.type}`}>
-          <span className="ti">{typeIcon}</span> {titleCaseSlug(mini.type)}
-        </span>
-
-        <span className={`badge catMini cat-${cat}`} title={titleCaseSlug(cat)}>
-          <span className="catIcon">{icon}</span>
-        </span>
-
+        {TypePill}
+        {CatPill}
         <span className={`cap moveChipName ${moveNameClass}`}>{titleCaseSlug(moveName)}</span>
       </button>
     );
@@ -1496,13 +1780,8 @@ function MoveRow({ kind, moveName, labelLeft, labelRight, onClick }) {
       <div className="moveLvl">{labelLeft}</div>
 
       <div className="moveIcons">
-        <span className={`badge typeBadge type-${mini.type}`}>
-          <span className="ti">{typeIcon}</span> {titleCaseSlug(mini.type)}
-        </span>
-
-        <span className={`badge catMini cat-${cat}`} title={titleCaseSlug(cat)}>
-          <span className="catIcon">{icon}</span>
-        </span>
+        {TypePill}
+        {CatPill}
       </div>
 
       <div className={`cap moveName ${moveNameClass}`}>{titleCaseSlug(moveName)}</div>
@@ -1512,7 +1791,7 @@ function MoveRow({ kind, moveName, labelLeft, labelRight, onClick }) {
 }
 
 /* ======================
-   Move Popup (nested modal)
+   Move Popup (PORTAL)
 ====================== */
 function MovePopup({ moveName, loading, move, onClose }) {
   useEffect(() => {
@@ -1523,12 +1802,14 @@ function MovePopup({ moveName, loading, move, onClose }) {
     };
   }, []);
 
-  return (
+  return createPortal(
     <div className="movePopBack" onClick={onClose}>
       <div className="movePop" onClick={(e) => e.stopPropagation()}>
         <div className="movePopHead">
           <div className="movePopTitle cap">{titleCaseSlug(moveName)}</div>
-          <button className="x" onClick={onClose}>×</button>
+          <button className="x" onClick={onClose}>
+            ×
+          </button>
         </div>
 
         <div className="movePopBody">
@@ -1541,7 +1822,8 @@ function MovePopup({ moveName, loading, move, onClose }) {
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -1586,28 +1868,49 @@ function MoveDetails({ move }) {
     shortEffect = "";
   }
 
-  const typeIcon = TYPE_ICON[typeRaw] || "❔";
-  const cIcon = catIcon(dmgClassRaw);
-
   return (
     <div className="kv">
       <div className="moveTopBadges">
         <span className={`badge typeBadge type-${typeRaw}`}>
-          <span className="ti">{typeIcon}</span> {type}
+          <img
+            className="typeIconImg"
+            src={typeIconUrl(typeRaw)}
+            alt={typeRaw}
+            loading="lazy"
+            onError={(e) => {
+              e.currentTarget.style.display = "none";
+            }}
+          />
+          {type}
         </span>
 
         <span className={`badge catBadge cat-${dmgClassRaw}`}>
-          <span className="catIcon">{cIcon}</span> {dmgClass}
-        </span>
+  {dmgClassRaw === "physical" && "⚔️ Physical"}
+  {dmgClassRaw === "special" && "✨ Special"}
+  {dmgClassRaw === "status" && "🛡️ Status"}
+</span>
+
       </div>
 
       <div className="moveGrid">
-        <div><span className="k">Power:</span> {power}</div>
-        <div><span className="k">Accuracy:</span> {acc}</div>
-        <div><span className="k">PP:</span> {pp}</div>
-        <div><span className="k">Priority:</span> {prio}</div>
-        <div><span className="k">Target:</span> {target}</div>
-        <div><span className="k">Effect Chance:</span> {effectChance}</div>
+        <div>
+          <span className="k">Power:</span> {power}
+        </div>
+        <div>
+          <span className="k">Accuracy:</span> {acc}
+        </div>
+        <div>
+          <span className="k">PP:</span> {pp}
+        </div>
+        <div>
+          <span className="k">Priority:</span> {prio}
+        </div>
+        <div>
+          <span className="k">Target:</span> {target}
+        </div>
+        <div>
+          <span className="k">Effect Chance:</span> {effectChance}
+        </div>
       </div>
 
       <div style={{ marginTop: "10px" }}>
@@ -1650,7 +1953,9 @@ function TypeChartCard({ onClose }) {
     <div className="typeChartCard">
       <div className="typeChartHead">
         <div className="typeChartTitle">Type Chart</div>
-        <button className="x" onClick={onClose}>×</button>
+        <button className="x" onClick={onClose}>
+          ×
+        </button>
       </div>
 
       <div className="typeChartBody">
@@ -1658,7 +1963,9 @@ function TypeChartCard({ onClose }) {
           <span className="k">Attacking</span>
           <select className="entrySelect" value={atk} onChange={(e) => setAtk(e.target.value)}>
             {TYPES.map((t) => (
-              <option key={t} value={t}>{titleCaseSlug(t)}</option>
+              <option key={t} value={t}>
+                {titleCaseSlug(t)}
+              </option>
             ))}
           </select>
         </div>
@@ -1668,14 +1975,18 @@ function TypeChartCard({ onClose }) {
           <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
             <select className="entrySelect" value={def1} onChange={(e) => setDef1(e.target.value)}>
               {TYPES.map((t) => (
-                <option key={t} value={t}>{titleCaseSlug(t)}</option>
+                <option key={t} value={t}>
+                  {titleCaseSlug(t)}
+                </option>
               ))}
             </select>
 
             <select className="entrySelect" value={def2} onChange={(e) => setDef2(e.target.value)}>
               <option value="">(No 2nd type)</option>
               {TYPES.map((t) => (
-                <option key={t} value={t}>{titleCaseSlug(t)}</option>
+                <option key={t} value={t}>
+                  {titleCaseSlug(t)}
+                </option>
               ))}
             </select>
           </div>
@@ -1688,19 +1999,25 @@ function TypeChartCard({ onClose }) {
         <div className="typeChartBlock">
           <div className="k">Against all types (single-type defense)</div>
 
-          {["4x","2x","1x","0.5x","0.25x","0x"].map((k) => (
+          {["4x", "2x", "1x", "0.5x", "0.25x", "0x"].map((k) => (
             <div key={k} style={{ marginTop: "10px" }}>
               <div className="k">{k}</div>
               <div className="chipRow">
                 {(buckets[k] || []).map((t) => (
                   <span key={t} className={`badge typeBadge type-${t}`}>
-                    <span className="ti">{TYPE_ICON[t] || "❔"}</span>
+                    <img
+                      className="typeIconImg"
+                      src={typeIconUrl(t)}
+                      alt={t}
+                      loading="lazy"
+                      onError={(e) => {
+                        e.currentTarget.style.display = "none";
+                      }}
+                    />
                     {titleCaseSlug(t)}
                   </span>
                 ))}
-                {(buckets[k] || []).length === 0 ? (
-                  <span className="small">None</span>
-                ) : null}
+                {(buckets[k] || []).length === 0 ? <span className="small">None</span> : null}
               </div>
             </div>
           ))}
