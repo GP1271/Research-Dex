@@ -17,6 +17,10 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pokedex   # 👈 THIS FIXES EVERYTHING
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,13 +33,13 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Build
+      - name: Build project
         run: npm run build
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: dist
+          path: pokedex/dist   # 👈 important
 
   deploy:
     environment:
