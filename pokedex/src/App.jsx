@@ -1,3 +1,4 @@
+// App.jsx
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import "./app.css";
@@ -268,6 +269,26 @@ const spriteCache = new Map();
 const moveCache = new Map(); // moveName -> move json
 const moveMiniCache = new Map(); // moveName -> {type, dmgClass}
 
+// Ability cache
+const abilityCache = new Map(); // abilityName -> ability json
+
+// Item caches
+const itemCache = new Map(); // itemName -> item json
+const itemCategoryCache = new Map(); // categoryName -> [itemName]
+
+const ITEM_CATEGORIES = [
+  { key: "held-items", label: "Held Items" },
+  { key: "medicine", label: "Medicine" },
+  { key: "stat-boosts", label: "Stat Boosts" },
+  { key: "type-protection", label: "Type Protection" },
+  { key: "plates", label: "Plates" },
+  { key: "mega-stones", label: "Mega Stones" },
+  { key: "z-crystals", label: "Z-Crystals" },
+  { key: "memories", label: "Memories" },
+  { key: "drives", label: "Drives" },
+  { key: "jewels", label: "Gems" },
+];
+
 async function fetchJsonOrNull(url) {
   const cached = await getFromCache(url);
   if (cached) return cached;
@@ -283,7 +304,6 @@ async function fetchJsonOrNull(url) {
     return null;
   }
 }
-
 
 async function pokemonExists(pokemonName) {
   if (pokemonExistsCache.has(pokemonName)) return pokemonExistsCache.get(pokemonName);
@@ -358,6 +378,34 @@ async function getMoveMini(moveName) {
   const mini = { type: "unknown", dmgClass: "status" };
   moveMiniCache.set(moveName, mini);
   return mini;
+}
+
+async function getAbilityData(abilityName) {
+  if (abilityCache.has(abilityName)) return abilityCache.get(abilityName);
+  const data = await fetchJsonOrNull(`https://pokeapi.co/api/v2/ability/${abilityName}`);
+  if (data) abilityCache.set(abilityName, data);
+  return data;
+}
+
+async function getItemData(itemName) {
+  if (itemCache.has(itemName)) return itemCache.get(itemName);
+  const data = await fetchJsonOrNull(`https://pokeapi.co/api/v2/item/${itemName}`);
+  if (data) itemCache.set(itemName, data);
+  return data;
+}
+
+async function getItemsInCategory(categoryName) {
+  if (itemCategoryCache.has(categoryName)) return itemCategoryCache.get(categoryName);
+  const data = await fetchJsonOrNull(`https://pokeapi.co/api/v2/item-category/${categoryName}`);
+  const list = (data?.items || []).map((x) => x.name).filter(Boolean);
+  itemCategoryCache.set(categoryName, list);
+  return list;
+}
+
+function getEnglishFlavorText(entries) {
+  const en = (entries || []).filter((e) => e.language?.name === "en");
+  // first is usually fine; still normalize
+  return (en[0]?.text || "").replace(/\f|\n/g, " ").trim();
 }
 
 /* ======================
@@ -475,18 +523,23 @@ export default function App() {
 
   // type chart toggle
   const [showTypeChart, setShowTypeChart] = useState(false);
+
+  // items chart toggle (NEW)
+  const [showItemsChart, setShowItemsChart] = useState(false);
+
+  // natures chart toggle (NEW)
+  const [showNaturesChart, setShowNaturesChart] = useState(false);
+
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [downloading, setDownloading] = useState(false);
   const [downloadOpen, setDownloadOpen] = useState(false);
 
-const [confirmClear, setConfirmClear] = useState(false);
-useEffect(() => {
-  if (!confirmClear) return;
-  const t = setTimeout(() => setConfirmClear(false), 4000); // auto-cancel after 4s
-  return () => clearTimeout(t);
-}, [confirmClear]);
-
-
+  const [confirmClear, setConfirmClear] = useState(false);
+  useEffect(() => {
+    if (!confirmClear) return;
+    const t = setTimeout(() => setConfirmClear(false), 4000); // auto-cancel after 4s
+    return () => clearTimeout(t);
+  }, [confirmClear]);
 
   useEffect(() => {
     document.body.classList.toggle("light", theme === "light");
@@ -531,7 +584,7 @@ useEffect(() => {
         setLoading(false);
       }
     }
-  
+
     load();
     return () => {
       alive = false;
@@ -547,86 +600,86 @@ useEffect(() => {
   const clampZoom = (z) => Math.max(70, Math.min(200, z));
   const bumpZoom = (delta) => setUiZoom((z) => clampZoom(z + delta));
 
-    async function downloadRegional() {
-  setDownloading(true);
-  setDownloadProgress(0);
+  async function downloadRegional() {
+    setDownloading(true);
+    setDownloadProgress(0);
 
-  try {
-    const res = await fetch(`https://pokeapi.co/api/v2/pokedex/${selectedDex}`);
-    const data = await res.json();
-    const entries = data.pokemon_entries;
-
-    let count = 0;
-
-    for (const e of entries) {
-      const speciesUrl = `https://pokeapi.co/api/v2/pokemon-species/${e.pokemon_species.name}`;
-      await fetchJsonOrNull(speciesUrl);
-
-      const pokeUrl = `https://pokeapi.co/api/v2/pokemon/${e.pokemon_species.name}`;
-      await fetchJsonOrNull(pokeUrl);
-
-      count++;
-      setDownloadProgress(Math.round((count / entries.length) * 100));
-    }
-  } catch (err) {
-    console.error(err);
-  }
-
-  setDownloading(false);
-}
-async function downloadGeneral() {
-  setDownloading(true);
-  setDownloadProgress(0);
-
-  try {
-    const res = await fetch(`https://pokeapi.co/api/v2/move?limit=10000`);
-    const data = await res.json();
-    const moves = data.results;
-
-    let count = 0;
-
-    for (const m of moves) {
-      await fetchJsonOrNull(m.url);
-      count++;
-      setDownloadProgress(Math.round((count / moves.length) * 100));
-    }
-  } catch (err) {
-    console.error(err);
-  }
-
-  setDownloading(false);
-}
-async function downloadAll() {
-  await downloadRegional();
-  await downloadGeneral();
-}
-async function clearOfflineCache() {
-  // localStorage (theme, zoom, etc.)
-  localStorage.removeItem("pdx-theme");
-  localStorage.removeItem("pdx-zoom");
-  localStorage.removeItem("pdx-moveColor");
-
-  // IndexedDB (if you add it later)
-  if (indexedDB?.databases) {
     try {
-      const dbs = await indexedDB.databases();
-      for (const db of dbs) {
-        if (db?.name) indexedDB.deleteDatabase(db.name);
+      const res = await fetch(`https://pokeapi.co/api/v2/pokedex/${selectedDex}`);
+      const data = await res.json();
+      const entries = data.pokemon_entries;
+
+      let count = 0;
+
+      for (const e of entries) {
+        const speciesUrl = `https://pokeapi.co/api/v2/pokemon-species/${e.pokemon_species.name}`;
+        await fetchJsonOrNull(speciesUrl);
+
+        const pokeUrl = `https://pokeapi.co/api/v2/pokemon/${e.pokemon_species.name}`;
+        await fetchJsonOrNull(pokeUrl);
+
+        count++;
+        setDownloadProgress(Math.round((count / entries.length) * 100));
       }
-    } catch {}
-  }
+    } catch (err) {
+      console.error(err);
+    }
 
-  // Cache Storage (service worker / PWA caches, if any)
-  if (window.caches?.keys) {
+    setDownloading(false);
+  }
+  async function downloadGeneral() {
+    setDownloading(true);
+    setDownloadProgress(0);
+
     try {
-      const keys = await caches.keys();
-      await Promise.all(keys.map((k) => caches.delete(k)));
-    } catch {}
-  }
+      const res = await fetch(`https://pokeapi.co/api/v2/move?limit=10000`);
+      const data = await res.json();
+      const moves = data.results;
 
-  // Reload so UI reflects cleared data
-  window.location.reload();
-}
+      let count = 0;
+
+      for (const m of moves) {
+        await fetchJsonOrNull(m.url);
+        count++;
+        setDownloadProgress(Math.round((count / moves.length) * 100));
+      }
+    } catch (err) {
+      console.error(err);
+    }
+
+    setDownloading(false);
+  }
+  async function downloadAll() {
+    await downloadRegional();
+    await downloadGeneral();
+  }
+  async function clearOfflineCache() {
+    // localStorage (theme, zoom, etc.)
+    localStorage.removeItem("pdx-theme");
+    localStorage.removeItem("pdx-zoom");
+    localStorage.removeItem("pdx-moveColor");
+
+    // IndexedDB (if you add it later)
+    if (indexedDB?.databases) {
+      try {
+        const dbs = await indexedDB.databases();
+        for (const db of dbs) {
+          if (db?.name) indexedDB.deleteDatabase(db.name);
+        }
+      } catch {}
+    }
+
+    // Cache Storage (service worker / PWA caches, if any)
+    if (window.caches?.keys) {
+      try {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((k) => caches.delete(k)));
+      } catch {}
+    }
+
+    // Reload so UI reflects cleared data
+    window.location.reload();
+  }
 
   return (
     <div className="wrap">
@@ -684,6 +737,22 @@ async function clearOfflineCache() {
         </button>
 
         <button
+          className={"themeBtn " + (showNaturesChart ? "activeBtn" : "")}
+          onClick={() => setShowNaturesChart((v) => !v)}
+          title="Toggle Natures"
+        >
+          Natures
+        </button>
+
+        <button
+          className={"themeBtn " + (showItemsChart ? "activeBtn" : "")}
+          onClick={() => setShowItemsChart((v) => !v)}
+          title="Toggle Items"
+        >
+          Items
+        </button>
+
+        <button
           className="themeBtn"
           onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
           title="Toggle light/dark"
@@ -691,78 +760,71 @@ async function clearOfflineCache() {
           {theme === "dark" ? "Light" : "Dark"}
         </button>
 
-      <div className="menuWrap">
-  <button
-    className={"themeBtn " + (downloadOpen ? "activeBtn" : "")}
-    onClick={() => setDownloadOpen((v) => !v)}
-    title="Download for offline use"
-  >
-    Download ▾
-  </button>
+        <div className="menuWrap">
+          <button
+            className={"themeBtn " + (downloadOpen ? "activeBtn" : "")}
+            onClick={() => setDownloadOpen((v) => !v)}
+            title="Download for offline use"
+          >
+            Download ▾
+          </button>
 
-  {downloadOpen && (
-    <div className="menuDrop" onMouseLeave={() => setDownloadOpen(false)}>
-      <button
-        className="menuItem"
-        onClick={() => {
-          setDownloadOpen(false);
-          // TODO: call your existing "download all" function here
-          // downloadAll();
-        }}
-      >
-        Download All
-      </button>
+          {downloadOpen && (
+            <div className="menuDrop" onMouseLeave={() => setDownloadOpen(false)}>
+              <button
+                className="menuItem"
+                onClick={() => {
+                  setDownloadOpen(false);
+                  downloadAll();
+                }}
+              >
+                Download All
+              </button>
 
-      <button
-        className="menuItem"
-        onClick={() => {
-          setDownloadOpen(false);
-          // TODO: call your existing "download regional" function here
-          // downloadRegional(selectedDex);
-        }}
-      >
-        Download This Dex
-      </button>
+              <button
+                className="menuItem"
+                onClick={() => {
+                  setDownloadOpen(false);
+                  downloadRegional();
+                }}
+              >
+                Download This Dex
+              </button>
 
-      <button
-        className="menuItem"
-        onClick={() => {
-          setDownloadOpen(false);
-          // TODO: call your existing "download current pokemon" function here
-          // downloadCurrent(openSpecies);
-        }}
-      >
-        Download Current Pokémon
-      </button>
-    </div>
-  )}
-</div>
+              <button
+                className="menuItem"
+                onClick={() => {
+                  setDownloadOpen(false);
+                  // (kept placeholder – no current-pokemon downloader in your script)
+                }}
+              >
+                Download Current Pokémon
+              </button>
+            </div>
+          )}
+        </div>
 
-<button
-  className={"themeBtn " + (confirmClear ? "dangerBtn" : "")}
-  onClick={() => {
-    if (!confirmClear) {
-      setConfirmClear(true);
-      return;
-    }
-    setConfirmClear(false);
-    clearOfflineCache();
-  }}
-  title="Clear downloaded data and settings"
->
-  {confirmClear ? "Confirm Delete" : "Delete Cache"}
-</button>
-
+        <button
+          className={"themeBtn " + (confirmClear ? "dangerBtn" : "")}
+          onClick={() => {
+            if (!confirmClear) {
+              setConfirmClear(true);
+              return;
+            }
+            setConfirmClear(false);
+            clearOfflineCache();
+          }}
+          title="Clear downloaded data and settings"
+        >
+          {confirmClear ? "Confirm Delete" : "Delete Cache"}
+        </button>
       </header>
-      {downloading && (
-  <div className="downloadBarWrap">
-    <div
-      className="downloadBarFill"
-      style={{ width: `${downloadProgress}%` }}
-    />
-  </div>
-)}
 
+      {downloading && (
+        <div className="downloadBarWrap">
+          <div className="downloadBarFill" style={{ width: `${downloadProgress}%` }} />
+        </div>
+      )}
 
       {/* zoom affects ONLY this area */}
       <div className="dexZoomArea" style={{ zoom: uiZoom / 100 }}>
@@ -809,6 +871,8 @@ async function clearOfflineCache() {
       )}
 
       {showTypeChart && <TypeChartCard onClose={() => setShowTypeChart(false)} />}
+      {showItemsChart && <ItemsChartCard onClose={() => setShowItemsChart(false)} />}
+      {showNaturesChart && <NaturesChartCard onClose={() => setShowNaturesChart(false)} />}
     </div>
   );
 }
@@ -906,11 +970,23 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
     other: [],
   });
 
+  // Toggle: show all generation text changes in move popup
+  const [showAllMoveGenText, setShowAllMoveGenText] = useState(false);
+
+  // Toggle: show older generation text in ability popup 
+const [showAllAbilityGenText, setShowAllAbilityGenText] = useState(false);
+
   // Move popup
   const [movePopupOpen, setMovePopupOpen] = useState(false);
   const [selectedMove, setSelectedMove] = useState("");
   const [moveDetails, setMoveDetails] = useState(null);
   const [moveDetailsLoading, setMoveDetailsLoading] = useState(false);
+
+  // Ability popup (NEW)
+  const [abilityPopupOpen, setAbilityPopupOpen] = useState(false);
+  const [selectedAbility, setSelectedAbility] = useState("");
+  const [abilityData, setAbilityData] = useState(null);
+  const [abilityPopupLoading, setAbilityPopupLoading] = useState(false);
 
   const pokemonMinGen = useMemo(() => {
     const g = species?.generation?.name;
@@ -961,11 +1037,19 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
       egg: [],
       other: [],
     });
+    setShowAllMoveGenText(false);
+    setShowAllAbilityGenText(false);
 
     setMovePopupOpen(false);
     setSelectedMove("");
     setMoveDetails(null);
     setMoveDetailsLoading(false);
+
+    // reset ability popup
+    setAbilityPopupOpen(false);
+    setSelectedAbility("");
+    setAbilityData(null);
+    setAbilityPopupLoading(false);
 
     async function load() {
       try {
@@ -1000,7 +1084,6 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
         });
         const sortedVersions = metas.map((m) => m.v);
         const defaultV = sortedVersions[0] || "";
-
 
         if (!alive) return;
         setEntryMap(map);
@@ -1147,6 +1230,12 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
         setSelectedMove("");
         setMoveDetails(null);
         setMoveDetailsLoading(false);
+
+        // close ability popup
+        setAbilityPopupOpen(false);
+        setSelectedAbility("");
+        setAbilityData(null);
+        setAbilityPopupLoading(false);
       }
     }
 
@@ -1292,6 +1381,22 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
       alive = false;
     };
   }, [selectedMove]);
+
+  // Ability popup load (NEW)
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (!selectedAbility) return;
+      setAbilityPopupLoading(true);
+      const data = await getAbilityData(selectedAbility);
+      if (!alive) return;
+      setAbilityData(data || null);
+      setAbilityPopupLoading(false);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [selectedAbility]);
 
   if (loading) {
     return (
@@ -1492,6 +1597,19 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
                   {movesOpen ? "−" : "+"}
                 </button>
 
+                {/* NEW: toggle right next to minimize/maximize */}
+                <button
+                  className={"miniToggleBtn " + (showAllMoveGenText ? "activeBtn" : "")}
+                  onClick={() => setShowAllMoveGenText((v) => !v)}
+                  title={
+                    showAllMoveGenText
+                      ? "Move popup shows ALL generation text changes"
+                      : "Move popup shows ONLY selected generation text"
+                  }
+                >
+                  G
+                </button>
+
                 <select
                   className="entrySelect"
                   value={moveGen}
@@ -1588,17 +1706,58 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
             <div className="panelText">{entryMap[entryVersion] || "No English entry found."}</div>
           </div>
 
-          {/* Abilities */}
+          {/* Abilities (CHANGED: click opens card popup, no vague under-text) */}
           <div className="panel">
-            <div className="panelTitle">Abilities</div>
+            <div className="panelTitle dexEntryHeader">
+  <span>Abilities</span>
+  <button
+    className={"miniToggleBtn " + (showAllAbilityGenText ? "activeBtn" : "")}
+    onClick={() => setShowAllAbilityGenText((v) => !v)}
+    title={
+      showAllAbilityGenText
+        ? "Ability popup shows older versions too"
+        : "Ability popup shows latest only"
+    }
+  >
+    G
+  </button>
+</div>
             <ul className="list">
               {pokemon.abilities.map((a) => (
                 <li key={a.ability.name}>
-                  <span className="cap">{titleCaseSlug(a.ability.name)}</span>
-                  {a.is_hidden && <span className="small"> (Hidden)</span>}
+                  <button
+                    className="abilityBtn"
+                    onClick={() => {
+                      setSelectedAbility(a.ability.name);
+                      setAbilityPopupOpen(true);
+                    }}
+                    title="Click for ability details"
+                  >
+                    <div>
+                      <span className="cap">{titleCaseSlug(a.ability.name)}</span>
+                      {a.is_hidden && <span className="small"> (Hidden)</span>}
+                    </div>
+                    <div className="small">Tap to view full description</div>
+                  </button>
                 </li>
               ))}
             </ul>
+
+            {abilityPopupOpen && (
+  <AbilityPopup
+    abilityName={selectedAbility}
+    loading={abilityPopupLoading}
+    ability={abilityData}
+    showAllGenText={showAllAbilityGenText}
+    onClose={() => {
+      setAbilityPopupOpen(false);
+      setSelectedAbility("");
+      setAbilityData(null);
+      setAbilityPopupLoading(false);
+    }}
+  />
+)}
+
           </div>
 
           {/* Stats */}
@@ -1659,6 +1818,8 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
                 setMoveDetails(null);
                 setMoveDetailsLoading(false);
               }}
+              showAllGenText={showAllMoveGenText}
+              selectedGen={moveGen}
             />
           )}
         </div>
@@ -1756,14 +1917,13 @@ function MoveRow({ kind, moveName, labelLeft, labelRight, onClick }) {
     </span>
   );
 
-const CatPill = (
-  <span className={`badge catMini cat-${cat}`} title={titleCaseSlug(cat)}>
-    {cat === "physical" && "⚔️ Physical"}
-    {cat === "special" && "✨ Special"}
-    {cat === "status" && "🛡️ Status"}
-  </span>
-);
-
+  const CatPill = (
+    <span className={`badge catMini cat-${cat}`} title={titleCaseSlug(cat)}>
+      {cat === "physical" && "⚔️ Physical"}
+      {cat === "special" && "✨ Special"}
+      {cat === "status" && "🛡️ Status"}
+    </span>
+  );
 
   if (kind === "chip") {
     return (
@@ -1793,7 +1953,7 @@ const CatPill = (
 /* ======================
    Move Popup (PORTAL)
 ====================== */
-function MovePopup({ moveName, loading, move, onClose }) {
+function MovePopup({ moveName, loading, move, onClose, showAllGenText, selectedGen }) {
   useEffect(() => {
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -1816,7 +1976,7 @@ function MovePopup({ moveName, loading, move, onClose }) {
           {loading ? (
             <div className="panelText">Loading move data…</div>
           ) : move ? (
-            <MoveDetails move={move} />
+            <MoveDetails move={move} showAllGenText={showAllGenText} selectedGen={selectedGen} />
           ) : (
             <div className="panelText">No move data found.</div>
           )}
@@ -1827,7 +1987,7 @@ function MovePopup({ moveName, loading, move, onClose }) {
   );
 }
 
-function MoveDetails({ move }) {
+function MoveDetails({ move, showAllGenText, selectedGen }) {
   const typeRaw = move?.type?.name || "unknown";
   const type = typeRaw ? titleCaseSlug(typeRaw) : "—";
 
@@ -1840,33 +2000,91 @@ function MoveDetails({ move }) {
   const prio = move?.priority ?? 0;
 
   const target = move?.target?.name ? titleCaseSlug(move.target.name) : "—";
-  const effectChance = move?.effect_chance != null ? `${move.effect_chance}%` : "—";
+  // Resolve version-group -> generation numbers so "latest" is always correct (SV > SwSh)
+  const [annotated, setAnnotated] = useState([]);
 
-  const replaceEffectChance = (text) => {
-    if (!text) return "";
-    if (move.effect_chance == null) return text;
-    return text.replace(/\$effect_chance/g, String(move.effect_chance));
+
+  // Version-group-specific move text
+  const flavorEn = (move.flavor_text_entries || [])
+    .filter((e) => e.language?.name === "en")
+    .map((e) => ({
+      vg: e.version_group?.name || "",
+      text: (e.flavor_text || "").replace(/\f|\n/g, " ").trim(),
+    }))
+    .filter((x) => x.vg && x.text);
+
+  const map = new Map();
+  for (const x of flavorEn) map.set(x.vg, x.text);
+  const unique = Array.from(map.entries()).map(([vg, text]) => ({ vg, text }));
+
+ useEffect(() => {
+  let alive = true;
+
+  (async () => {
+    const withGen = await Promise.all(
+      unique.map(async (x) => ({
+        ...x,
+        gen: await getVersionGroupGenNumber(x.vg), // fetches if missing, cached after
+      }))
+    );
+
+    withGen.sort((a, b) => {
+      const ga = a.gen ?? 999;
+      const gb = b.gen ?? 999;
+      if (ga !== gb) return ga - gb;
+      return a.vg.localeCompare(b.vg);
+    });
+
+    if (alive) setAnnotated(withGen);
+  })();
+
+  return () => {
+    alive = false;
   };
+  // rerun only when move changes (unique derived from move)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [move?.name]);
 
-  const effect =
-    replaceEffectChance(
-      (move.effect_entries || [])
-        .find((e) => e.language?.name === "en")
-        ?.effect?.replace(/\n/g, " ")
-        .trim()
-    ) || "—";
+const genWanted = selectedGen === "all" ? null : Number(selectedGen);
 
-  let shortEffect =
-    replaceEffectChance(
-      (move.effect_entries || [])
-        .find((e) => e.language?.name === "en")
-        ?.short_effect?.replace(/\n/g, " ")
-        .trim()
-    ) || "";
+let shown = annotated;
 
-  if (shortEffect && effect && effect.toLowerCase().includes(shortEffect.toLowerCase())) {
-    shortEffect = "";
+if (!showAllGenText) {
+  if (genWanted) {
+    const exact = annotated.filter((x) => (x.gen ?? 999) === genWanted);
+
+    if (exact.length) {
+      shown = exact;
+    } else {
+      // No text for the selected gen — pick the closest gen.
+      // Prefer the NEXT gen (e.g., Gen 1 -> Gen 2) before going backward.
+      const gens = Array.from(
+        new Set(annotated.map((x) => x.gen).filter((g) => Number.isFinite(g) && g !== 999))
+      ).sort((a, b) => a - b);
+
+      const nextGen = gens.find((g) => g > genWanted);
+      const prevGen = [...gens].reverse().find((g) => g < genWanted);
+
+      const chosen = nextGen ?? prevGen ?? null;
+
+      if (chosen != null) {
+        const close = annotated.filter((x) => x.gen === chosen);
+        shown = close.length ? close : annotated.slice(-1);
+      } else {
+        shown = annotated.slice(-1);
+      }
+    }
+  } else {
+    // All Gens + toggle OFF => newest entry
+    shown = annotated.slice(-1);
   }
+}
+
+
+  // mechanics text (often more complete than flavor)
+  const effectEntry = (move.effect_entries || []).find((e) => e.language?.name === "en");
+  const shortEffect = (effectEntry?.short_effect || "").replace(/\f|\n/g, " ").trim();
+  const effect = (effectEntry?.effect || "").replace(/\f|\n/g, " ").trim();
 
   return (
     <div className="kv">
@@ -1885,11 +2103,10 @@ function MoveDetails({ move }) {
         </span>
 
         <span className={`badge catBadge cat-${dmgClassRaw}`}>
-  {dmgClassRaw === "physical" && "⚔️ Physical"}
-  {dmgClassRaw === "special" && "✨ Special"}
-  {dmgClassRaw === "status" && "🛡️ Status"}
-</span>
-
+          {dmgClassRaw === "physical" && "⚔️ Physical"}
+          {dmgClassRaw === "special" && "✨ Special"}
+          {dmgClassRaw === "status" && "🛡️ Status"}
+        </span>
       </div>
 
       <div className="moveGrid">
@@ -1909,18 +2126,141 @@ function MoveDetails({ move }) {
           <span className="k">Target:</span> {target}
         </div>
         <div>
-          <span className="k">Effect Chance:</span> {effectChance}
+          <span className="k">Text Mode:</span> {showAllGenText ? "All changes" : "Selected gen"}
         </div>
       </div>
 
-      <div style={{ marginTop: "10px" }}>
-        <div className="k">Effect:</div>
-        <div className="panelText" style={{ marginTop: "6px" }}>
-          {shortEffect ? <b>{shortEffect}</b> : null}
-          {shortEffect ? <div style={{ height: "6px" }} /> : null}
-          {effect}
+      <div style={{ marginTop: "12px" }}>
+        <div className="k">Move Text</div>
+        {shown.length === 0 ? (
+          <div className="panelText" style={{ marginTop: "6px" }}>
+            No flavor text found.
+          </div>
+        ) : (
+          <div className="genTextStack">
+            {shown.map((x) => (
+              <div key={x.vg} className="genBox">
+                <div className="k">
+                  {x.gen ? `Gen ${x.gen} • ` : ""}
+                  {titleCaseSlug(x.vg)}
+                </div>
+                <div className="panelText" style={{ marginTop: "6px" }}>
+                  {x.text}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {(shortEffect || effect) && (
+        <div style={{ marginTop: "12px" }}>
+          <div className="k">Effect (mechanics)</div>
+          <div className="panelText" style={{ marginTop: "6px" }}>
+            {shortEffect ? <b>{shortEffect}</b> : null}
+            {shortEffect ? <div style={{ height: "6px" }} /> : null}
+            {effect || "—"}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ======================
+   Ability Popup (PORTAL)
+====================== */
+function AbilityPopup({ abilityName, loading, ability, onClose, showAllGenText }) {
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, []);
+
+  return createPortal(
+    <div className="movePopBack" onClick={onClose}>
+      <div className="movePop" onClick={(e) => e.stopPropagation()}>
+        <div className="movePopHead">
+          <div className="movePopTitle cap">{titleCaseSlug(abilityName)}</div>
+          <button className="x" onClick={onClose}>
+            ×
+          </button>
+        </div>
+
+        <div className="movePopBody">
+          {loading ? (
+            <div className="panelText">Loading ability…</div>
+          ) : !ability ? (
+            <div className="panelText">No ability data found.</div>
+          ) : (
+            <AbilityDetails ability={ability} showAllGenText={showAllGenText} />
+          )}
         </div>
       </div>
+    </div>,
+    document.body
+  );
+}
+
+function AbilityDetails({ ability, showAllGenText }) {
+  const flavor =
+    (ability.flavor_text_entries || [])
+      .find((e) => e.language?.name === "en")
+      ?.flavor_text?.replace(/\f|\n/g, " ")
+      .trim() || "";
+
+  const effectEntry = (ability.effect_entries || []).find((e) => e.language?.name === "en");
+  const shortEffect = (effectEntry?.short_effect || "").replace(/\f|\n/g, " ").trim();
+  const effect = (effectEntry?.effect || "").replace(/\f|\n/g, " ").trim();
+
+  const changes = (ability.effect_changes || [])
+    .map((c) => {
+      const en = (c.effect_entries || []).find((e) => e.language?.name === "en");
+      const txt = (en?.effect || "").replace(/\f|\n/g, " ").trim();
+      const vg = c.version_group?.name || "";
+      return txt ? { vg, txt } : null;
+    })
+    .filter(Boolean);
+
+  return (
+    <div className="kv">
+      {flavor ? (
+        <div>
+          <div className="k">Summary</div>
+          <div className="panelText" style={{ marginTop: "6px" }}>
+            {flavor}
+          </div>
+        </div>
+      ) : null}
+
+      {(shortEffect || effect) ? (
+        <div style={{ marginTop: "10px" }}>
+          <div className="k">Effect</div>
+          <div className="panelText" style={{ marginTop: "6px" }}>
+            {shortEffect ? <b>{shortEffect}</b> : null}
+            {shortEffect ? <div style={{ height: "6px" }} /> : null}
+            {effect || "—"}
+          </div>
+        </div>
+      ) : null}
+
+    {showAllGenText && changes.length > 0 ? (
+        <div style={{ marginTop: "10px" }}>
+          <div className="k">Older Versions</div>
+          <div className="genTextStack">
+            {changes.map((c) => (
+              <div key={c.vg} className="genBox">
+                <div className="k">{titleCaseSlug(c.vg)}</div>
+                <div className="panelText" style={{ marginTop: "6px" }}>
+                  {c.txt}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -2021,6 +2361,268 @@ function TypeChartCard({ onClose }) {
               </div>
             </div>
           ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ======================
+   Items chart card (NEW: scrollable + searchable + clickable)
+====================== */
+function ItemsChartCard({ onClose }) {
+  const [category, setCategory] = useState("held-items");
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [q, setQ] = useState("");
+
+  const [itemPopupOpen, setItemPopupOpen] = useState(false);
+  const [selectedItem, setSelectedItem] = useState("");
+  const [itemData, setItemData] = useState(null);
+  const [itemLoading, setItemLoading] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      setLoading(true);
+      const list = await getItemsInCategory(category);
+      if (!alive) return;
+      setItems(list || []);
+      setLoading(false);
+    })();
+    return () => (alive = false);
+  }, [category]);
+
+  const filtered = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    if (!s) return items;
+    return items.filter((nm) => nm.includes(s));
+  }, [items, q]);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (!selectedItem) return;
+      setItemLoading(true);
+      const data = await getItemData(selectedItem);
+      if (!alive) return;
+      setItemData(data || null);
+      setItemLoading(false);
+    })();
+    return () => (alive = false);
+  }, [selectedItem]);
+
+  return (
+    <div className="typeChartCard">
+      <div className="typeChartHead">
+        <div className="typeChartTitle">Items</div>
+        <button className="x" onClick={onClose}>
+          ×
+        </button>
+      </div>
+
+      <div className="typeChartBody">
+        <div className="typeChartRow">
+          <span className="k">Category</span>
+          <select className="entrySelect" value={category} onChange={(e) => setCategory(e.target.value)}>
+            {ITEM_CATEGORIES.map((c) => (
+              <option key={c.key} value={c.key}>
+                {c.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <input className="search" placeholder="Search items…" value={q} onChange={(e) => setQ(e.target.value)} />
+
+        {loading ? (
+          <div className="panelText">Loading items…</div>
+        ) : filtered.length === 0 ? (
+          <div className="panelText small">No items found.</div>
+        ) : (
+          <div className="itemGridWrap">
+  {filtered.slice(0, 240).map((nm) => (
+    <button
+      key={nm}
+      className="badge itemBadge itemChipBtn"
+      onClick={() => {
+        setSelectedItem(nm);
+        setItemPopupOpen(true);
+      }}
+      title="Click for item details"
+    >
+      {titleCaseSlug(nm)}
+    </button>
+  ))}
+  {filtered.length > 240 && (
+    <div className="small" style={{ width: "100%" }}>
+      Showing first 240 (search to narrow).
+    </div>
+  )}
+</div>
+        )}
+
+        {itemPopupOpen && (
+          <ItemPopup
+            itemName={selectedItem}
+            loading={itemLoading}
+            item={itemData}
+            onClose={() => {
+              setItemPopupOpen(false);
+              setSelectedItem("");
+              setItemData(null);
+              setItemLoading(false);
+            }}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ItemPopup({ itemName, loading, item, onClose }) {
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => (document.body.style.overflow = prev);
+  }, []);
+
+  return createPortal(
+    <div className="movePopBack" onClick={onClose}>
+      <div className="movePop" onClick={(e) => e.stopPropagation()}>
+        <div className="movePopHead">
+          <div className="movePopTitle cap">{titleCaseSlug(itemName)}</div>
+          <button className="x" onClick={onClose}>
+            ×
+          </button>
+        </div>
+
+        <div className="movePopBody">
+          {loading ? (
+            <div className="panelText">Loading item…</div>
+          ) : !item ? (
+            <div className="panelText">No item data found.</div>
+          ) : (
+            <ItemDetails item={item} />
+          )}
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+function ItemDetails({ item }) {
+  const flavor = getEnglishFlavorText(item.flavor_text_entries);
+  const effect =
+    (item.effect_entries || [])
+      .find((e) => e.language?.name === "en")
+      ?.effect?.replace(/\f|\n/g, " ")
+      .trim() || "";
+
+  const category = titleCaseSlug(item.category?.name || "");
+  const cost = item.cost ?? 0;
+
+  return (
+    <div className="kv">
+      <div>
+        <span className="k">Category:</span> {category || "—"}
+      </div>
+      <div>
+        <span className="k">Cost:</span> {cost}
+      </div>
+
+      <div style={{ marginTop: "10px" }}>
+        <div className="k">Description:</div>
+        <div className="panelText" style={{ marginTop: "6px" }}>
+          {flavor || effect || "—"}
+        </div>
+      </div>
+
+      {effect && flavor && effect !== flavor ? (
+        <div style={{ marginTop: "10px" }}>
+          <div className="k">Effect (detailed):</div>
+          <div className="panelText" style={{ marginTop: "6px" }}>
+            {effect}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/* ======================
+   Natures chart card (simple + scrollable)
+====================== */
+const NATURES = [
+  { name: "Hardy", up: null, down: null },
+  { name: "Lonely", up: "Attack", down: "Defense" },
+  { name: "Brave", up: "Attack", down: "Speed" },
+  { name: "Adamant", up: "Attack", down: "Sp. Atk" },
+  { name: "Naughty", up: "Attack", down: "Sp. Def" },
+
+  { name: "Bold", up: "Defense", down: "Attack" },
+  { name: "Docile", up: null, down: null },
+  { name: "Relaxed", up: "Defense", down: "Speed" },
+  { name: "Impish", up: "Defense", down: "Sp. Atk" },
+  { name: "Lax", up: "Defense", down: "Sp. Def" },
+
+  { name: "Timid", up: "Speed", down: "Attack" },
+  { name: "Hasty", up: "Speed", down: "Defense" },
+  { name: "Serious", up: null, down: null },
+  { name: "Jolly", up: "Speed", down: "Sp. Atk" },
+  { name: "Naive", up: "Speed", down: "Sp. Def" },
+
+  { name: "Modest", up: "Sp. Atk", down: "Attack" },
+  { name: "Mild", up: "Sp. Atk", down: "Defense" },
+  { name: "Quiet", up: "Sp. Atk", down: "Speed" },
+  { name: "Bashful", up: null, down: null },
+  { name: "Rash", up: "Sp. Atk", down: "Sp. Def" },
+
+  { name: "Calm", up: "Sp. Def", down: "Attack" },
+  { name: "Gentle", up: "Sp. Def", down: "Defense" },
+  { name: "Sassy", up: "Sp. Def", down: "Speed" },
+  { name: "Careful", up: "Sp. Def", down: "Sp. Atk" },
+  { name: "Quirky", up: null, down: null },
+];
+
+function NaturesChartCard({ onClose }) {
+  const [q, setQ] = useState("");
+
+  const filtered = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    if (!s) return NATURES;
+    return NATURES.filter((n) => n.name.toLowerCase().includes(s));
+  }, [q]);
+
+  return (
+    <div className="typeChartCard">
+      <div className="typeChartHead">
+        <div className="typeChartTitle">Natures</div>
+        <button className="x" onClick={onClose}>
+          ×
+        </button>
+      </div>
+
+      <div className="typeChartBody natureBody">
+        <input className="search" placeholder="Search natures…" value={q} onChange={(e) => setQ(e.target.value)} />
+
+        <div className="genTextStack" style={{ marginTop: "10px" }}>
+          {filtered.map((n) => (
+            <div key={n.name} className="genBox">
+              <div className="k">{n.name}</div>
+              <div className="panelText" style={{ marginTop: "6px" }}>
+                {n.up && n.down ? (
+                  <>
+                    <b>↑ {n.up}</b> &nbsp;|&nbsp; <b>↓ {n.down}</b>
+                  </>
+                ) : (
+                  "Neutral (no stat changes)"
+                )}
+              </div>
+            </div>
+          ))}
+          {filtered.length === 0 ? <div className="panelText small">No natures found.</div> : null}
         </div>
       </div>
     </div>

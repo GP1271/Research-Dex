@@ -1,3 +1,5 @@
+/* app.css */
+
 /* ===== Base ===== */
 * { box-sizing: border-box; }
 html, body { height: 100%; }
@@ -617,6 +619,7 @@ body.light .movePopHead{
   color: #fff;
   box-shadow: 0 20px 60px rgba(0,0,0,0.45);
   backdrop-filter: blur(10px);
+  overscroll-behavior: contain;
 }
 body.light .typeChartCard{
   background: rgba(255,255,255,0.96);
@@ -634,7 +637,16 @@ body.light .typeChartHead{
   border-bottom: 1px solid rgba(0,0,0,0.10);
 }
 .typeChartTitle{ font-weight: 1000; letter-spacing: 0.3px; }
-.typeChartBody{ padding: 12px 14px; display:grid; gap: 12px; }
+
+/* IMPORTANT: make chart body scrollable (fixes Natures list) */
+.typeChartBody{
+  padding: 12px 14px;
+  display:grid;
+  gap: 12px;
+  max-height: calc(82vh - 56px);
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
 .typeChartRow{ display:flex; align-items:center; justify-content:space-between; gap: 10px; }
 .typeChartBlock .k{ margin-bottom: 6px; }
 .chipRow{ display:flex; flex-wrap:wrap; gap: 8px; }
@@ -716,12 +728,11 @@ body.moveColorOn .moveType-normal{ color:#a8a77a; }
 /* Don’t show a text caret on images */
 img { caret-color: transparent; }
 
- .downloadBarWrap{
+.downloadBarWrap{
   height: 6px;
   width: 100%;
   background: rgba(255,255,255,0.1);
 }
-
 .downloadBarFill{
   height: 100%;
   background: #22c55e;
@@ -775,4 +786,66 @@ body.light .menuItem:hover {
 /* ===== Delete Cache warning state ===== */
 .dangerBtn {
   outline: 2px solid rgba(239, 68, 68, 0.55);
+}
+
+/* ===== NEW: ability button (click opens popup card) ===== */
+.abilityBtn{
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.06);
+  color: inherit;
+  cursor: pointer;
+  font-weight: 900;
+}
+body.light .abilityBtn{
+  border: 1px solid rgba(0,0,0,0.12);
+  background: rgba(0,0,0,0.03);
+}
+.abilityBtn:hover{ filter: brightness(1.08); }
+
+/* ===== NEW: gen-separated text blocks for move/ability ===== */
+.genTextStack{
+  display: grid;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.genBox{
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.05);
+}
+body.light .genBox{
+  border: 1px solid rgba(0,0,0,0.12);
+  background: rgba(0,0,0,0.03);
+}
+
+/* ===== NEW: items chips are clickable ===== */
+.itemChipBtn{
+  border: 0;
+  cursor: pointer;
+}
+.itemChipBtn:hover{
+  filter: brightness(1.08);
+}
+/* Items grid (neat columns) */
+.itemGridWrap{
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 8px;
+  align-items: stretch;
+}
+
+/* Make item buttons fill their grid cell nicely */
+.itemChipBtn{
+  width: 100%;
+  justify-content: center;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
