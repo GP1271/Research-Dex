@@ -849,3 +849,65 @@ body.light .genBox{
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* =========================
+   FIX: Topbar overflow on mobile/iPad
+   Paste at END of app.css
+========================= */
+
+/* Prevent horizontal bleed */
+html, body, .wrap {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+/* Let the topbar wrap instead of forcing one long row */
+.topbar {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Make the search box flexible so it doesn't force overflow */
+.topbar .search {
+  flex: 1 1 220px;       /* grows, shrinks, minimum width */
+  min-width: 160px;
+  max-width: 100%;
+}
+
+/* Keep control groups from stretching weirdly */
+.topbar .zoomCtl,
+.topbar .toggle,
+.topbar .menuWrap {
+  flex: 0 0 auto;
+  max-width: 100%;
+}
+
+/* Buttons should be allowed to shrink/wrap */
+.topbar .themeBtn,
+.topbar .zoomBtn,
+.topbar .miniToggleBtn {
+  max-width: 100%;
+  white-space: nowrap;
+}
+
+/* If your title is long, allow it to wrap instead of pushing everything off-screen */
+.topbar .title {
+  flex: 1 1 240px;
+  min-width: 200px;
+}
+
+/* iPad/mobile: make it slightly tighter */
+@media (max-width: 900px) {
+  .topbar {
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .topbar .title {
+    flex: 1 1 100%;
+  }
+
+  .topbar .search {
+    flex: 1 1 100%;
+  }
+}

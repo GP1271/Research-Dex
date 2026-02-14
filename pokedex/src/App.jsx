@@ -957,6 +957,12 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
 
   const displayPokemonName = selectedForm || selectedVariant;
 
+  // Sprite gender toggle
+  const [spriteGender, setSpriteGender] = useState("default");
+
+  // ✅ ALLOW FEMALE TOGGLE EVEN WITHOUT FEMALE SPRITES (set false to disable)
+  const ALLOW_GENDER_TOGGLE_WITHOUT_SPRITES = true;
+
   // Movepool state
   const [movesOpen, setMovesOpen] = useState(false);
   const [moveGen, setMoveGen] = useState("all");
@@ -973,8 +979,8 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
   // Toggle: show all generation text changes in move popup
   const [showAllMoveGenText, setShowAllMoveGenText] = useState(false);
 
-  // Toggle: show older generation text in ability popup 
-const [showAllAbilityGenText, setShowAllAbilityGenText] = useState(false);
+  // Toggle: show older generation text in ability popup
+  const [showAllAbilityGenText, setShowAllAbilityGenText] = useState(false);
 
   // Move popup
   const [movePopupOpen, setMovePopupOpen] = useState(false);
@@ -1027,6 +1033,7 @@ const [showAllAbilityGenText, setShowAllAbilityGenText] = useState(false);
 
     // reset moves
     setMovesOpen(false);
+    setSpriteGender("default");
     setMoveGen("all");
     setMoveSearch("");
     setMovesReady(false);
@@ -1419,10 +1426,20 @@ const [showAllAbilityGenText, setShowAllAbilityGenText] = useState(false);
   const typesSorted = (pokemon.types || []).slice().sort((a, b) => a.slot - b.slot);
   const primaryType = typesSorted[0]?.type?.name || "unknown";
 
+  const sprites = pokemon?.sprites || {};
+
+  const spriteDefault = shiny
+    ? (sprites.front_shiny || sprites.front_default || "")
+    : (sprites.front_default || "");
+
+  const spriteFemale = shiny
+    ? (sprites.front_shiny_female || sprites.front_shiny || sprites.front_default || "")
+    : (sprites.front_female || sprites.front_default || "");
+
   const sprite =
-    (shiny ? pokemon.sprites.front_shiny : pokemon.sprites.front_default) ||
-    pokemon.sprites.front_default ||
-    "";
+    spriteGender === "female" ? spriteFemale : spriteDefault;
+
+  const hasFemaleSprite = !!sprites.front_female || !!sprites.front_shiny_female;
 
   const genus = (species.genera || []).find((g) => g.language?.name === "en")?.genus || "";
 
@@ -1446,7 +1463,35 @@ const [showAllAbilityGenText, setShowAllAbilityGenText] = useState(false);
 
         <div className="modalBody">
           <div className="row">
-            <img className="spriteBig" src={sprite} alt={pokemon.name} />
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
+              <img className="spriteBig" src={sprite} alt={pokemon.name} />
+
+              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", justifyContent: "center" }}>
+                <button
+                  className={"themeBtn " + (spriteGender === "default" ? "activeBtn" : "")}
+                  onClick={() => setSpriteGender("default")}
+                  title="Default sprite (usually male/default)"
+                >
+                  Default
+                </button>
+
+                <button
+                  className={"themeBtn " + (spriteGender === "female" ? "activeBtn" : "")}
+                  onClick={() => setSpriteGender("female")}
+                  disabled={!ALLOW_GENDER_TOGGLE_WITHOUT_SPRITES && !hasFemaleSprite}
+                  title={
+                    hasFemaleSprite
+                      ? "Female sprite"
+                      : ALLOW_GENDER_TOGGLE_WITHOUT_SPRITES
+                      ? "No separate female sprite in PokeAPI — will fall back to default sprite"
+                      : "No female sprite available for this Pokémon"
+                  }
+                >
+                  Female
+                </button>
+              </div>
+            </div>
+
             <div className="col">
               {/* Types */}
               <div className="badges">
@@ -1709,19 +1754,15 @@ const [showAllAbilityGenText, setShowAllAbilityGenText] = useState(false);
           {/* Abilities (CHANGED: click opens card popup, no vague under-text) */}
           <div className="panel">
             <div className="panelTitle dexEntryHeader">
-  <span>Abilities</span>
-  <button
-    className={"miniToggleBtn " + (showAllAbilityGenText ? "activeBtn" : "")}
-    onClick={() => setShowAllAbilityGenText((v) => !v)}
-    title={
-      showAllAbilityGenText
-        ? "Ability popup shows older versions too"
-        : "Ability popup shows latest only"
-    }
-  >
-    G
-  </button>
-</div>
+              <span>Abilities</span>
+              <button
+                className={"miniToggleBtn " + (showAllAbilityGenText ? "activeBtn" : "")}
+                onClick={() => setShowAllAbilityGenText((v) => !v)}
+                title={showAllAbilityGenText ? "Ability popup shows older versions too" : "Ability popup shows latest only"}
+              >
+                G
+              </button>
+            </div>
             <ul className="list">
               {pokemon.abilities.map((a) => (
                 <li key={a.ability.name}>
@@ -1744,20 +1785,19 @@ const [showAllAbilityGenText, setShowAllAbilityGenText] = useState(false);
             </ul>
 
             {abilityPopupOpen && (
-  <AbilityPopup
-    abilityName={selectedAbility}
-    loading={abilityPopupLoading}
-    ability={abilityData}
-    showAllGenText={showAllAbilityGenText}
-    onClose={() => {
-      setAbilityPopupOpen(false);
-      setSelectedAbility("");
-      setAbilityData(null);
-      setAbilityPopupLoading(false);
-    }}
-  />
-)}
-
+              <AbilityPopup
+                abilityName={selectedAbility}
+                loading={abilityPopupLoading}
+                ability={abilityData}
+                showAllGenText={showAllAbilityGenText}
+                onClose={() => {
+                  setAbilityPopupOpen(false);
+                  setSelectedAbility("");
+                  setAbilityData(null);
+                  setAbilityPopupLoading(false);
+                }}
+              />
+            )}
           </div>
 
           {/* Stats */}
@@ -2003,7 +2043,6 @@ function MoveDetails({ move, showAllGenText, selectedGen }) {
   // Resolve version-group -> generation numbers so "latest" is always correct (SV > SwSh)
   const [annotated, setAnnotated] = useState([]);
 
-
   // Version-group-specific move text
   const flavorEn = (move.flavor_text_entries || [])
     .filter((e) => e.language?.name === "en")
@@ -2017,69 +2056,68 @@ function MoveDetails({ move, showAllGenText, selectedGen }) {
   for (const x of flavorEn) map.set(x.vg, x.text);
   const unique = Array.from(map.entries()).map(([vg, text]) => ({ vg, text }));
 
- useEffect(() => {
-  let alive = true;
+  useEffect(() => {
+    let alive = true;
 
-  (async () => {
-    const withGen = await Promise.all(
-      unique.map(async (x) => ({
-        ...x,
-        gen: await getVersionGroupGenNumber(x.vg), // fetches if missing, cached after
-      }))
-    );
+    (async () => {
+      const withGen = await Promise.all(
+        unique.map(async (x) => ({
+          ...x,
+          gen: await getVersionGroupGenNumber(x.vg), // fetches if missing, cached after
+        }))
+      );
 
-    withGen.sort((a, b) => {
-      const ga = a.gen ?? 999;
-      const gb = b.gen ?? 999;
-      if (ga !== gb) return ga - gb;
-      return a.vg.localeCompare(b.vg);
-    });
+      withGen.sort((a, b) => {
+        const ga = a.gen ?? 999;
+        const gb = b.gen ?? 999;
+        if (ga !== gb) return ga - gb;
+        return a.vg.localeCompare(b.vg);
+      });
 
-    if (alive) setAnnotated(withGen);
-  })();
+      if (alive) setAnnotated(withGen);
+    })();
 
-  return () => {
-    alive = false;
-  };
-  // rerun only when move changes (unique derived from move)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [move?.name]);
+    return () => {
+      alive = false;
+    };
+    // rerun only when move changes (unique derived from move)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [move?.name]);
 
-const genWanted = selectedGen === "all" ? null : Number(selectedGen);
+  const genWanted = selectedGen === "all" ? null : Number(selectedGen);
 
-let shown = annotated;
+  let shown = annotated;
 
-if (!showAllGenText) {
-  if (genWanted) {
-    const exact = annotated.filter((x) => (x.gen ?? 999) === genWanted);
+  if (!showAllGenText) {
+    if (genWanted) {
+      const exact = annotated.filter((x) => (x.gen ?? 999) === genWanted);
 
-    if (exact.length) {
-      shown = exact;
-    } else {
-      // No text for the selected gen — pick the closest gen.
-      // Prefer the NEXT gen (e.g., Gen 1 -> Gen 2) before going backward.
-      const gens = Array.from(
-        new Set(annotated.map((x) => x.gen).filter((g) => Number.isFinite(g) && g !== 999))
-      ).sort((a, b) => a - b);
-
-      const nextGen = gens.find((g) => g > genWanted);
-      const prevGen = [...gens].reverse().find((g) => g < genWanted);
-
-      const chosen = nextGen ?? prevGen ?? null;
-
-      if (chosen != null) {
-        const close = annotated.filter((x) => x.gen === chosen);
-        shown = close.length ? close : annotated.slice(-1);
+      if (exact.length) {
+        shown = exact;
       } else {
-        shown = annotated.slice(-1);
-      }
-    }
-  } else {
-    // All Gens + toggle OFF => newest entry
-    shown = annotated.slice(-1);
-  }
-}
+        // No text for the selected gen — pick the closest gen.
+        // Prefer the NEXT gen (e.g., Gen 1 -> Gen 2) before going backward.
+        const gens = Array.from(
+          new Set(annotated.map((x) => x.gen).filter((g) => Number.isFinite(g) && g !== 999))
+        ).sort((a, b) => a - b);
 
+        const nextGen = gens.find((g) => g > genWanted);
+        const prevGen = [...gens].reverse().find((g) => g < genWanted);
+
+        const chosen = nextGen ?? prevGen ?? null;
+
+        if (chosen != null) {
+          const close = annotated.filter((x) => x.gen === chosen);
+          shown = close.length ? close : annotated.slice(-1);
+        } else {
+          shown = annotated.slice(-1);
+        }
+      }
+    } else {
+      // All Gens + toggle OFF => newest entry
+      shown = annotated.slice(-1);
+    }
+  }
 
   // mechanics text (often more complete than flavor)
   const effectEntry = (move.effect_entries || []).find((e) => e.language?.name === "en");
@@ -2246,7 +2284,7 @@ function AbilityDetails({ ability, showAllGenText }) {
         </div>
       ) : null}
 
-    {showAllGenText && changes.length > 0 ? (
+      {showAllGenText && changes.length > 0 ? (
         <div style={{ marginTop: "10px" }}>
           <div className="k">Older Versions</div>
           <div className="genTextStack">
@@ -2441,25 +2479,25 @@ function ItemsChartCard({ onClose }) {
           <div className="panelText small">No items found.</div>
         ) : (
           <div className="itemGridWrap">
-  {filtered.slice(0, 240).map((nm) => (
-    <button
-      key={nm}
-      className="badge itemBadge itemChipBtn"
-      onClick={() => {
-        setSelectedItem(nm);
-        setItemPopupOpen(true);
-      }}
-      title="Click for item details"
-    >
-      {titleCaseSlug(nm)}
-    </button>
-  ))}
-  {filtered.length > 240 && (
-    <div className="small" style={{ width: "100%" }}>
-      Showing first 240 (search to narrow).
-    </div>
-  )}
-</div>
+            {filtered.slice(0, 240).map((nm) => (
+              <button
+                key={nm}
+                className="badge itemBadge itemChipBtn"
+                onClick={() => {
+                  setSelectedItem(nm);
+                  setItemPopupOpen(true);
+                }}
+                title="Click for item details"
+              >
+                {titleCaseSlug(nm)}
+              </button>
+            ))}
+            {filtered.length > 240 && (
+              <div className="small" style={{ width: "100%" }}>
+                Showing first 240 (search to narrow).
+              </div>
+            )}
+          </div>
         )}
 
         {itemPopupOpen && (
