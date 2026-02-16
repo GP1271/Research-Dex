@@ -5,7 +5,7 @@ import "./app.css";
 import { saveToCache, getFromCache } from "./offlineDB";
 
 /* ======================
-   Dex tabs
+   Dex tabs (GAME DEXES)
 ====================== */
 const DEXES = [
   { key: "national", label: "National" },
@@ -18,6 +18,22 @@ const DEXES = [
   { key: "updated-alola", label: "Alola" },
   { key: "galar", label: "Galar" },
   { key: "paldea", label: "Paldea" },
+];
+
+/* ======================
+   NEW: Gen-added Pokédex tabs
+   (species introduced in each generation)
+====================== */
+const GEN_DEXES = [
+  { id: 1, key: "gen-1", label: "Gen I (Kanto) • 151" },
+  { id: 2, key: "gen-2", label: "Gen II (Johto) • 100" },
+  { id: 3, key: "gen-3", label: "Gen III (Hoenn) • 135" },
+  { id: 4, key: "gen-4", label: "Gen IV (Sinnoh) • 107" },
+  { id: 5, key: "gen-5", label: "Gen V (Unova) • 156" },
+  { id: 6, key: "gen-6", label: "Gen VI (Kalos) • 72" },
+  { id: 7, key: "gen-7", label: "Gen VII (Alola) • 88" },
+  { id: 8, key: "gen-8", label: "Gen VIII (Galar/Hisui) • 96" },
+  { id: 9, key: "gen-9", label: "Gen IX (Paldea) • 120" },
 ];
 
 const pad3 = (n) => String(n).padStart(3, "0");
@@ -66,6 +82,14 @@ function statColorClass(value) {
 function statPercent(value) {
   const pct = Math.round((value / 180) * 100);
   return Math.max(0, Math.min(100, pct));
+}
+
+/* ======================
+   NEW: parse numeric id from PokeAPI URLs
+====================== */
+function idFromApiUrl(u) {
+  const m = String(u || "").match(/\/(\d+)\/?$/);
+  return m ? Number(m[1]) : 9999;
 }
 
 /* ======================
@@ -506,7 +530,12 @@ export default function App() {
     return saved ? Number(saved) : 115;
   });
 
+  // NEW: mode switch between Game Dex and Gen-added Pokédex
+  const [dexMode, setDexMode] = useState("game"); // "game" | "gen"
+
   const [selectedDex, setSelectedDex] = useState("national");
+  const [selectedGen, setSelectedGen] = useState(1); // 1..9
+
   const [dexEntries, setDexEntries] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -555,6 +584,7 @@ export default function App() {
     localStorage.setItem("pdx-moveColor", moveColorMode ? "1" : "0");
   }, [moveColorMode]);
 
+  // LOAD ENTRIES (CHANGED: supports both modes)
   useEffect(() => {
     let alive = true;
     setDexEntries([]);
@@ -562,19 +592,35 @@ export default function App() {
 
     async function load() {
       try {
-        const res = await fetch(`https://pokeapi.co/api/v2/pokedex/${selectedDex}`);
-        const data = await res.json();
+        if (dexMode === "game") {
+          const res = await fetch(`https://pokeapi.co/api/v2/pokedex/${selectedDex}`);
+          const data = await res.json();
 
-        const list = data.pokemon_entries
-          .map((e) => ({
-            species: e.pokemon_species.name,
-            entryNumber: e.entry_number,
-            dex: selectedDex,
-          }))
-          .sort((a, b) => a.entryNumber - b.entryNumber);
+          const list = data.pokemon_entries
+            .map((e) => ({
+              species: e.pokemon_species.name,
+              entryNumber: e.entry_number,
+              dex: selectedDex,
+            }))
+            .sort((a, b) => a.entryNumber - b.entryNumber);
 
-        if (!alive) return;
-        setDexEntries(list);
+          if (!alive) return;
+          setDexEntries(list);
+        } else {
+          const res = await fetch(`https://pokeapi.co/api/v2/generation/${selectedGen}`);
+          const data = await res.json();
+
+          const list = (data.pokemon_species || [])
+            .map((s) => ({
+              species: s.name,
+              entryNumber: idFromApiUrl(s.url), // national dex number for the species
+              dex: `gen-${selectedGen}`,
+            }))
+            .sort((a, b) => a.entryNumber - b.entryNumber);
+
+          if (!alive) return;
+          setDexEntries(list);
+        }
       } catch (err) {
         console.error(err);
         if (!alive) return;
@@ -589,7 +635,7 @@ export default function App() {
     return () => {
       alive = false;
     };
-  }, [selectedDex]);
+  }, [selectedDex, dexMode, selectedGen]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -680,6 +726,9 @@ export default function App() {
     // Reload so UI reflects cleared data
     window.location.reload();
   }
+
+  // CHANGED: dexKey passed into cards/modal
+  const effectiveDexKey = dexMode === "game" ? selectedDex : "national";
 
   return (
     <div className="wrap">
@@ -828,14 +877,35 @@ export default function App() {
 
       {/* zoom affects ONLY this area */}
       <div className="dexZoomArea" style={{ zoom: uiZoom / 100 }}>
+        {/* TOP ROW: Game Dex (kept as-is) */}
         <div className="tabs">
           {DEXES.map((d) => (
             <button
               key={d.key}
-              className={"tab " + (selectedDex === d.key ? "active" : "")}
-              onClick={() => setSelectedDex(d.key)}
+              className={"tab " + (dexMode === "game" && selectedDex === d.key ? "active" : "")}
+              onClick={() => {
+                setDexMode("game");
+                setSelectedDex(d.key);
+              }}
             >
               {d.label}
+            </button>
+          ))}
+        </div>
+
+        {/* NEW BOTTOM ROW: Gen-added Pokédex */}
+        <div className="tabs">
+          {GEN_DEXES.map((g) => (
+            <button
+              key={g.key}
+              className={"tab " + (dexMode === "gen" && selectedGen === g.id ? "active" : "")}
+              onClick={() => {
+                setDexMode("gen");
+                setSelectedGen(g.id);
+              }}
+              title="Pokémon introduced in this generation"
+            >
+              {g.label}
             </button>
           ))}
         </div>
@@ -847,10 +917,10 @@ export default function App() {
             <div className="grid">
               {filtered.map((p) => (
                 <PokemonCard
-                  key={`${p.dex}-${p.entryNumber}-${p.species}`}
+                  key={`${dexMode}-${p.dex}-${p.entryNumber}-${p.species}`}
                   species={p.species}
                   entryNumber={p.entryNumber}
-                  dexKey={selectedDex}
+                  dexKey={effectiveDexKey}
                   shiny={shiny}
                   onOpen={() => setOpenSpecies(p.species)}
                 />
@@ -863,7 +933,7 @@ export default function App() {
       {openSpecies && (
         <DetailsModal
           speciesName={openSpecies}
-          dexKey={selectedDex}
+          dexKey={effectiveDexKey}
           shiny={shiny}
           onClose={() => setOpenSpecies(null)}
           onOpenSpecies={(s) => setOpenSpecies(s)}
@@ -1033,7 +1103,7 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
 
     // reset moves
     setMovesOpen(false);
-    setSpriteGender("default");
+    setSpriteGender("male");
     setMoveGen("all");
     setMoveSearch("");
     setMovesReady(false);
@@ -1428,18 +1498,13 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
 
   const sprites = pokemon?.sprites || {};
 
-  const spriteDefault = shiny
-    ? (sprites.front_shiny || sprites.front_default || "")
-    : (sprites.front_default || "");
+  const spriteDefault = shiny ? (sprites.front_shiny || sprites.front_default || "") : (sprites.front_default || "");
 
   const spriteFemale = shiny
     ? (sprites.front_shiny_female || sprites.front_shiny || sprites.front_default || "")
     : (sprites.front_female || sprites.front_default || "");
 
-  const sprite =
-    spriteGender === "female" ? spriteFemale : spriteDefault;
-
-  const hasFemaleSprite = !!sprites.front_female || !!sprites.front_shiny_female;
+  const sprite = spriteGender === "female" ? spriteFemale : spriteDefault;
 
   const genus = (species.genera || []).find((g) => g.language?.name === "en")?.genus || "";
 
@@ -1448,6 +1513,8 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
 
   const baseTotal = (pokemon.stats || []).reduce((sum, s) => sum + (s.base_stat || 0), 0);
   const evTotal = (pokemon.stats || []).reduce((sum, s) => sum + (s.effort || 0), 0);
+
+  const hasFemaleSprite = !!pokemon?.sprites?.front_female || !!pokemon?.sprites?.front_shiny_female;
 
   return (
     <div className="modalBack" onClick={onClose}>
@@ -1478,7 +1545,11 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
                 <button
                   className={"themeBtn " + (spriteGender === "female" ? "activeBtn" : "")}
                   onClick={() => setSpriteGender("female")}
-                  disabled={!ALLOW_GENDER_TOGGLE_WITHOUT_SPRITES && !hasFemaleSprite}
+                  disabled={
+                    !ALLOW_GENDER_TOGGLE_WITHOUT_SPRITES &&
+                    !pokemon?.sprites?.front_female &&
+                    !pokemon?.sprites?.front_shiny_female
+                  }
                   title={
                     hasFemaleSprite
                       ? "Female sprite"
@@ -2080,7 +2151,6 @@ function MoveDetails({ move, showAllGenText, selectedGen }) {
     return () => {
       alive = false;
     };
-    // rerun only when move changes (unique derived from move)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [move?.name]);
 
