@@ -682,8 +682,8 @@ useEffect(() => {
     setDownloadOpen(false);
   }
 
-  document.addEventListener("click", handleDocClick);
-  return () => document.removeEventListener("click", handleDocClick);
+  document.addEventListener("pointerdown", handleDocClick);
+  return () => document.removeEventListener("pointerdown", handleDocClick);
 }, []);
 
   const sizesBtnRef = useRef(null);
@@ -1058,27 +1058,6 @@ useEffect(() => {
           <span>Shiny</span>
         </label>
 
-        <div className="zoomCtl" title="Zoom (Dex only)">
-          <button className="zoomBtn" onClick={() => bumpZoom(-5)}>
-            -
-          </button>
-          <input
-            className="zoomInput"
-            value={uiZoom}
-            onChange={(e) => {
-              const raw = e.target.value.replace(/[^\d]/g, "");
-              const n = raw ? Number(raw) : 0;
-              setUiZoom(clampZoom(n));
-            }}
-          />
-          <button className="zoomBtn" onClick={() => bumpZoom(5)}>
-            +
-          </button>
-          <span className="small">%</span>
-        </div>
-
-        
-
         <button
           className={"themeBtn " + (moveColorMode ? "activeBtn" : "")}
           onClick={() => setMoveColorMode((v) => !v)}
@@ -1127,7 +1106,11 @@ useEffect(() => {
           {theme === "dark" ? "Light" : "Dark"}
         </button>
 
-        <div className="menuWrap" onClick={(e) => e.stopPropagation()}>
+        <div
+  className="menuWrap"
+  onClick={(e) => e.stopPropagation()}
+  onPointerDown={(e) => e.stopPropagation()}
+>
     <button
     ref={sizesBtnRef}
     className={"themeBtn " + (sizesOpen ? "activeBtn" : "")}
@@ -1224,7 +1207,11 @@ useEffect(() => {
   )}
 </div>    
 
-        <div className="menuWrap" onClick={(e) => e.stopPropagation()}>
+        <div
+  className="menuWrap"
+  onClick={(e) => e.stopPropagation()}
+  onPointerDown={(e) => e.stopPropagation()}
+>
             <button
     ref={menuBtnRef}
     className={"themeBtn " + (downloadOpen ? "activeBtn" : "")}

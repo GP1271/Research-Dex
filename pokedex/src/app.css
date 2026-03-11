@@ -1050,6 +1050,12 @@ html, body, .wrap {
 
 /* iPad/mobile */
 @media (max-width: 900px) {
+    .topbar {
+    transform: scale(var(--mobile-topbar-scale, 1));
+    transform-origin: top left;
+    width: calc(100% / var(--mobile-topbar-scale, 1));
+  }
+
   .topbar {
     gap: 8px;
     padding: 10px;
