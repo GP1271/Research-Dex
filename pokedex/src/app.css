@@ -9,6 +9,35 @@ body {
   background: #0b1220;
   color: #e8eefc;
 }
+
+.title,
+.tab,
+.panelTitle,
+.panelText,
+.small,
+.k,
+.name,
+.num,
+.moveName,
+.moveVG,
+.moveLvl,
+.evoSquareName,
+.menuSectionLabel,
+.menuInfoLine,
+.statsTotals,
+.statName,
+.statVal,
+.dexSectionHeader,
+.tabsToggleRow,
+.toggle,
+.badges,
+.kv,
+.list,
+body {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 body.light {
   background: #f6f8ff;
   color: #111;
@@ -29,6 +58,7 @@ body.light {
   background: rgba(10, 16, 30, 0.88);
   border-bottom: 1px solid rgba(255,255,255,0.10);
   backdrop-filter: blur(10px);
+  flex-wrap: wrap;
 }
 body.light .topbar{
   background: rgba(255,255,255,0.92);
@@ -43,10 +73,12 @@ body.light .topbar{
   white-space: nowrap;
   display: flex;
   align-items: center;
+  flex: 1 1 240px;
+  min-width: 200px;
 }
 
 .search{
-  flex: 1;
+  flex: 1 1 220px;
   min-width: 160px;
   max-width: 360px;
   padding: 10px 12px;
@@ -323,11 +355,55 @@ body.light .entrySelect{
 }
 body.light .entrySelect option{ color:#111; background:#fff; }
 
+/* ===== NEW: topbar control groups ===== */
+.topbarGroup{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.topbarSelect{
+  min-width: 160px;
+  max-width: 220px;
+}
+
+.topbarCompactBtn{
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+/* ===== NEW: type filter block ===== */
+.typeFilterWrap{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.typeFilterSingle{
+  min-width: 130px;
+}
+
+.typeFilterDual{
+  min-width: 130px;
+}
+
+.typeFilterModeBtn{
+  min-width: 96px;
+  text-align: center;
+}
+
 /* ===== Variant / Forms ===== */
 .vfWrap{ display:grid; gap: 8px; margin-top: 6px; }
 .vfRow{ display:flex; align-items:center; justify-content:space-between; gap: 10px; }
 .vfLabel{ font-weight: 1000; opacity: 0.9; }
 .vfSelect{ min-width: 220px; }
+.compactSelect{
+  padding-top: 6px;
+  padding-bottom: 6px;
+  min-height: 34px;
+}
 .vfClear{
   justify-self: start;
   padding: 8px 10px;
@@ -401,7 +477,34 @@ body.light .statBar{
 .evMini{ font-size: 11px; opacity: 0.8; font-weight: 900; }
 
 /* ===== Moves ===== */
-.moveTools{ display:flex; gap: 10px; align-items:center; flex-wrap: wrap; }
+.moveTools{
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+.moveTools .search{
+  flex: 0 0 220px;
+  min-width: 220px;
+  max-width: 220px;
+}
+
+.moveTools .entrySelect{
+  flex: 0 0 auto;
+}
+
+@media (max-width: 900px){
+  .moveTools{
+    justify-content: flex-start;
+  }
+
+  .moveTools .search{
+    flex: 1 1 100%;
+    min-width: 180px;
+    max-width: 100%;
+  }
+}
 
 .miniToggleBtn{
   width: 34px;
@@ -642,7 +745,6 @@ body.light .typeChartHead{
 }
 .typeChartTitle{ font-weight: 1000; letter-spacing: 0.3px; }
 
-/* IMPORTANT: make chart body scrollable (fixes Natures list) */
 .typeChartBody{
   padding: 12px 14px;
   display:grid;
@@ -717,7 +819,7 @@ body.moveColorOn .moveType-normal{ color:#a8a77a; }
   caret-color: transparent;
 }
 
-/* Optional: make hover cursor consistent (prevents I-beam on some browsers) */
+/* Optional: make hover cursor consistent */
 .entrySelect,
 .zoomInput,
 .search {
@@ -731,6 +833,28 @@ body.moveColorOn .moveType-normal{ color:#a8a77a; }
 
 /* Don’t show a text caret on images */
 img { caret-color: transparent; }
+
+body,
+.wrap,
+.main,
+.topbar,
+.tabs,
+.panel,
+.modal,
+.movePop,
+.typeChartCard,
+.card,
+button,
+div,
+span,
+label,
+article,
+p,
+h1, h2, h3, h4, h5, h6,
+li,
+ul {
+  caret-color: transparent;
+}
 
 .downloadBarWrap{
   height: 6px;
@@ -747,13 +871,13 @@ img { caret-color: transparent; }
 .menuWrap {
   position: relative;
   display: inline-block;
+  max-width: 100%;
 }
 
 .menuDrop {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  min-width: 210px;
+  position: fixed;
+  min-width: 230px;
+  max-width: min(280px, calc(100vw - 24px));
   padding: 8px;
   border-radius: 14px;
   border: 1px solid rgba(255,255,255,0.14);
@@ -785,6 +909,15 @@ body.light .menuDrop {
 
 body.light .menuItem:hover {
   background: rgba(0,0,0,0.06);
+}
+
+.menuDivider{
+  height: 1px;
+  margin: 8px 4px;
+  background: rgba(255,255,255,0.12);
+}
+body.light .menuDivider{
+  background: rgba(0,0,0,0.10);
 }
 
 /* ===== Delete Cache warning state ===== */
@@ -836,15 +969,12 @@ body.light .genBox{
 .itemChipBtn:hover{
   filter: brightness(1.08);
 }
-/* Items grid (neat columns) */
 .itemGridWrap{
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
   gap: 8px;
   align-items: stretch;
 }
-
-/* Make item buttons fill their grid cell nicely */
 .itemChipBtn{
   width: 100%;
   justify-content: center;
@@ -853,29 +983,11 @@ body.light .genBox{
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* =========================
-   FIX: Topbar overflow on mobile/iPad
-   Paste at END of app.css
-========================= */
 
-/* Prevent horizontal bleed */
+/* ===== Prevent horizontal bleed ===== */
 html, body, .wrap {
   max-width: 100%;
   overflow-x: hidden;
-}
-
-/* Let the topbar wrap instead of forcing one long row */
-.topbar {
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-}
-
-/* Make the search box flexible so it doesn't force overflow */
-.topbar .search {
-  flex: 1 1 220px;       /* grows, shrinks, minimum width */
-  min-width: 160px;
-  max-width: 100%;
 }
 
 /* Keep control groups from stretching weirdly */
@@ -894,13 +1006,49 @@ html, body, .wrap {
   white-space: nowrap;
 }
 
-/* If your title is long, allow it to wrap instead of pushing everything off-screen */
-.topbar .title {
-  flex: 1 1 240px;
-  min-width: 200px;
+/* ===== NEW: mobile topbar size controls ===== */
+.topbar.size-sm .themeBtn,
+.topbar.size-sm .entrySelect,
+.topbar.size-sm .search,
+.topbar.size-sm .zoomInput {
+  padding-top: 8px;
+  padding-bottom: 8px;
+  font-size: 12px;
+}
+.topbar.size-sm .zoomBtn,
+.topbar.size-sm .miniToggleBtn {
+  width: 30px;
+  height: 30px;
+}
+.topbar.size-sm .title {
+  font-size: 16px;
 }
 
-/* iPad/mobile: make it slightly tighter */
+.topbar.size-md .themeBtn,
+.topbar.size-md .entrySelect,
+.topbar.size-md .search,
+.topbar.size-md .zoomInput {
+  font-size: 14px;
+}
+
+.topbar.size-lg .themeBtn,
+.topbar.size-lg .entrySelect,
+.topbar.size-lg .search,
+.topbar.size-lg .zoomInput {
+  padding-top: 12px;
+  padding-bottom: 12px;
+  font-size: 15px;
+}
+.topbar.size-lg .zoomBtn,
+.topbar.size-lg .miniToggleBtn {
+  width: 38px;
+  height: 38px;
+}
+.topbar.size-lg .title {
+  font-size: 19px;
+}
+
+/* iPad/mobile */
 @media (max-width: 900px) {
   .topbar {
     gap: 8px;
@@ -913,19 +1061,141 @@ html, body, .wrap {
 
   .topbar .search {
     flex: 1 1 100%;
+    max-width: 100%;
   }
-  .topFilterSelect{
+
+  .topFilterSelect,
+  .topbarSelect {
     min-width: 120px;
     max-width: 100%;
   }
-}
-/* ===== MOBILE: always show Delete Cache button ===== */
-@media (max-width: 900px) {
-  /* Force Delete Cache to take a full row so it never gets hidden */
-  .topbar > .themeBtn.dangerBtn,
-  .topbar > .themeBtn:not(.activeBtn):last-of-type {
-    flex: 1 1 100%;
+
+  .typeFilterWrap {
     width: 100%;
-    text-align: center;
   }
+
+  .typeFilterWrap .entrySelect,
+  .typeFilterWrap .themeBtn {
+    flex: 1 1 auto;
+  }
+
+  .menuWrap {
+    position: relative;
+  }
+
+  .menuDrop,
+  .menuDropLeft,
+  .menuDropRight {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0 !important;
+    left: auto !important;
+    width: auto;
+    min-width: 230px;
+    max-width: min(280px, calc(100vw - 12px));
+  }
+}
+.dexSection{
+  padding: 10px 14px 0;
+}
+
+.dexSectionHeader{
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.05);
+  color: inherit;
+  font-weight: 1000;
+  cursor: pointer;
+}
+body.light .dexSectionHeader{
+  border: 1px solid rgba(0,0,0,0.14);
+  background: rgba(0,0,0,0.04);
+}
+
+.menuSectionLabel{
+  padding: 6px 10px 4px;
+  font-size: 12px;
+  font-weight: 1000;
+  opacity: 0.72;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.menuInfoLine{
+  padding: 4px 10px 10px;
+}
+
+.menuDangerItem{
+  color: #f87171;
+}
+
+.menuItemActive{
+  background: rgba(99,150,240,0.18);
+}
+body.light .menuItemActive{
+  background: rgba(99,150,240,0.14);
+}
+
+.menuDropSizes{
+  min-width: 260px;
+}
+
+.menuDropMain{
+  min-width: 240px;
+}
+
+.menuZoomRow{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 10px;
+}
+.tabsToggleRow{
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 14px 0;
+}
+
+.menuSectionLabel{
+  font-size: 12px;
+  font-weight: 1000;
+  opacity: 0.7;
+  padding: 6px 8px 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.menuInfoLine{
+  padding: 0 8px 8px;
+}
+
+.menuDropSizes{
+  min-width: 260px;
+}
+
+.menuZoomRow{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 8px;
+}
+
+.menuItemActive{
+  background: rgba(99, 150, 240, 0.20);
+}
+
+.menuDangerItem{
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.10);
+}
+body.light .menuDangerItem{
+  color: #b91c1c;
+  background: rgba(239, 68, 68, 0.10);
 }

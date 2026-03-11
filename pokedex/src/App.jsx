@@ -1,43 +1,41 @@
 // App.jsx
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import "./app.css";
 import { saveToCache, getFromCache } from "./offlineDB";
 
 /* ======================
-   Dex tabs (GAME DEXES)
+   Dex data
 ====================== */
 const DEXES = [
-  { key: "national", label: "National" },
-  { key: "kanto", label: "Kanto" },
-  { key: "original-johto", label: "Johto" },
-  { key: "hoenn", label: "Hoenn" },
-  { key: "original-sinnoh", label: "Sinnoh" },
-  { key: "original-unova", label: "Unova" },
-  { key: "kalos-central", label: "Kalos" },
-  { key: "updated-alola", label: "Alola" },
-  { key: "galar", label: "Galar" },
-  { key: "paldea", label: "Paldea" },
+  { key: "national", label: "National", count: 1025 },
+  { key: "kanto", label: "Kanto", count: 151 },
+  { key: "original-johto", label: "Johto", count: 251 },
+  { key: "hoenn", label: "Hoenn", count: 202 },
+  { key: "original-sinnoh", label: "Sinnoh", count: 151 },
+  { key: "original-unova", label: "Unova", count: 155 },
+  { key: "kalos-central", label: "Kalos", count: 150 },
+  { key: "updated-alola", label: "Alola", count: 403 },
+  { key: "galar", label: "Galar", count: 400 },
+  { key: "paldea", label: "Paldea", count: 400 },
+  { key: "unknown", label: "Unidentified", count: 2 },
 ];
 
-/* ======================
-   NEW: Gen-added Pokédex tabs
-   (species introduced in each generation)
-====================== */
 const GEN_DEXES = [
-  { id: 1, key: "gen-1", label: "Gen I (Kanto) • 151" },
-  { id: 2, key: "gen-2", label: "Gen II (Johto) • 100" },
-  { id: 3, key: "gen-3", label: "Gen III (Hoenn) • 135" },
-  { id: 4, key: "gen-4", label: "Gen IV (Sinnoh) • 107" },
-  { id: 5, key: "gen-5", label: "Gen V (Unova) • 156" },
-  { id: 6, key: "gen-6", label: "Gen VI (Kalos) • 72" },
-  { id: 7, key: "gen-7", label: "Gen VII (Alola) • 88" },
-  { id: 8, key: "gen-8", label: "Gen VIII (Galar/Hisui) • 96" },
-  { id: 9, key: "gen-9", label: "Gen IX (Paldea) • 120" },
+  { id: 1, key: "gen-1", label: "Gen I • Kanto", count: 151 },
+  { id: 2, key: "gen-2", label: "Gen II • Johto", count: 100 },
+  { id: 3, key: "gen-3", label: "Gen III • Hoenn", count: 135 },
+  { id: 4, key: "gen-4", label: "Gen IV • Sinnoh", count: 107 },
+  { id: 5, key: "gen-5", label: "Gen V • Unova", count: 156 },
+  { id: 6, key: "gen-6", label: "Gen VI • Kalos", count: 72 },
+  { id: 7, key: "gen-7", label: "Gen VII • Alola", count: 88 },
+  { id: 8, key: "gen-8", label: "Gen VIII • Galar/Hisui", count: 96 },
+  { id: 9, key: "gen-9", label: "Gen IX • Paldea", count: 120 },
 ];
 
 const pad3 = (n) => String(n).padStart(3, "0");
 const CURRENT_GEN = 9;
+const SINGLE_TYPE_ONLY = "__single_type_only__";
 
 const FILTER_TYPES = [
   "normal",
@@ -59,6 +57,10 @@ const FILTER_TYPES = [
   "steel",
   "fairy",
 ];
+
+function formatDexTabLabel(label, count, showCount) {
+  return showCount ? `${label} • ${count}` : label;
+}
 
 /* ======================
    Vite base-path safe assets
@@ -94,6 +96,79 @@ function genderRateToText(rate) {
   return `${male.toFixed(1)}% ♂ / ${female.toFixed(1)}% ♀`;
 }
 
+function getDisplayedGenderText(species, pokemonName) {
+  const femaleOnlyForms = [
+    "pikachu-cosplay",
+    "pikachu-rock-star",
+    "pikachu-belle",
+    "pikachu-pop-star",
+    "pikachu-phd",
+    "pikachu-libre",
+  ];
+
+  const maleOnlyForms = [];
+
+  const distinctGenderForms = [
+    "meowstic-male",
+    "meowstic-female",
+    "oinkologne-male",
+    "oinkologne-female",
+    "indeedee-male",
+    "indeedee-female",
+    "basculegion-male",
+    "basculegion-female",
+  ];
+
+  if (distinctGenderForms.includes(pokemonName)) return "Form-specific";
+  if (femaleOnlyForms.includes(pokemonName)) return "0% ♂ / 100% ♀";
+  if (maleOnlyForms.includes(pokemonName)) return "100% ♂ / 0% ♀";
+
+  return genderRateToText(species.gender_rate);
+}
+function normalizeEggGroupName(name) {
+  if (!name) return "";
+  if (name === "ground") return "Field";
+  if (name === "humanshape") return "Human-Like";
+  if (name === "plant") return "Grass";
+  if (name === "indeterminate") return "Amorphous";
+  if (name === "no-eggs") return "Undiscovered";
+  if (name === "water1") return "Water 1";
+  if (name === "water2") return "Water 2";
+  if (name === "water3") return "Water 3";
+  if (name === "fairy") return "Fairy";
+  if (name === "mineral") return "Mineral";
+  if (name === "bug") return "Bug";
+  if (name === "dragon") return "Dragon";
+  if (name === "monster") return "Monster";
+  if (name === "flying") return "Flying";
+  return titleCaseSlug(name);
+}
+
+function formatEggGroups(eggGroups) {
+  return (eggGroups || [])
+    .map((e) => normalizeEggGroupName(e.name))
+    .join(", ");
+}
+
+function normalizeDisplayPokemonName(name) {
+  if (!name) return "";
+
+  // Remove gender suffixes automatically
+  return name.replace(/-(male|female)$/, "");
+}
+
+function getDisplayLabelForDexTab(key) {
+  const found = DEXES.find((d) => d.key === key);
+  if (!found) return "Game Dex";
+  return found.label;
+}
+
+function getDisplayLabelForGenTab(id) {
+  const found = GEN_DEXES.find((g) => g.id === id);
+  if (!found) return "Pokédex";
+  return found.label;
+}
+
 function statColorClass(value) {
   if (value < 60) return "low";
   if (value < 100) return "mid";
@@ -105,25 +180,32 @@ function statPercent(value) {
   return Math.max(0, Math.min(100, pct));
 }
 
-/* ======================
-   NEW: parse numeric id from PokeAPI URLs
-====================== */
 function idFromApiUrl(u) {
   const m = String(u || "").match(/\/(\d+)\/?$/);
   return m ? Number(m[1]) : 9999;
 }
 
-/* ======================
-   Theme (dark/light)
-====================== */
 function getInitialTheme() {
   const saved = localStorage.getItem("pdx-theme");
   if (saved === "light" || saved === "dark") return saved;
   return "dark";
 }
 
+function getMobileTopbarScale() {
+  const saved = localStorage.getItem("pdx-mobileTopbarScale");
+  const n = saved ? Number(saved) : 100;
+  if (!Number.isFinite(n)) return 100;
+  return Math.max(80, Math.min(120, n));
+}
+
+function typeFilterMatches(filterValue, types) {
+  if (!filterValue) return true;
+  if (filterValue === SINGLE_TYPE_ONLY) return types.length === 1;
+  return types.includes(filterValue);
+}
+
 /* ======================
-   Version -> generation sorting cache (dex entry dropdown)
+   Version -> generation sorting cache
 ====================== */
 const versionGenCache = new Map();
 function genSlugToNumber(genSlug) {
@@ -171,9 +253,9 @@ async function getVersionGenNumber(versionName) {
 }
 
 /* ======================
-   Version-group -> generation (for movepool filter)
+   Version-group -> generation
 ====================== */
-const versionGroupGenCache = new Map(); // versionGroupName -> genNum
+const versionGroupGenCache = new Map();
 async function getVersionGroupGenNumber(vgName) {
   if (!vgName) return 999;
   if (versionGroupGenCache.has(vgName)) return versionGroupGenCache.get(vgName);
@@ -214,8 +296,8 @@ function formatEvolutionDetail(d) {
   if (d.party_species?.name) parts.push(`Party: ${titleCaseSlug(d.party_species.name)}`);
   if (d.party_type?.name) parts.push(`Party Type: ${titleCaseSlug(d.party_type.name)}`);
   if (d.trade_species?.name) parts.push(`Trade for ${titleCaseSlug(d.trade_species.name)}`);
-  if (d.needs_overworld_rain) parts.push(`Overworld Rain`);
-  if (d.turn_upside_down) parts.push(`Turn device upside down`);
+  if (d.needs_overworld_rain) parts.push("Overworld Rain");
+  if (d.turn_upside_down) parts.push("Turn device upside down");
   if (d.gender != null) parts.push(d.gender === 1 ? "Female" : d.gender === 2 ? "Male" : "");
   if (d.relative_physical_stats != null) {
     if (d.relative_physical_stats === 1) parts.push("Atk > Def");
@@ -277,7 +359,18 @@ function isMega(pokemonName) {
 function isGmax(pokemonName) {
   return pokemonName.includes("-gmax");
 }
-
+function hasDistinctGenderForms(pokemonName) {
+  return [
+    "meowstic-male",
+    "meowstic-female",
+    "oinkologne-male",
+    "oinkologne-female",
+    "indeedee-male",
+    "indeedee-female",
+    "basculegion-male",
+    "basculegion-female",
+  ].includes(pokemonName);
+}
 function prettyLabel(baseName, pokemonName) {
   if (pokemonName === baseName) return "Base";
 
@@ -287,7 +380,8 @@ function prettyLabel(baseName, pokemonName) {
 
   if (tail === "gmax") return "Gigantamax";
   if (tail === "mega") return "Mega";
-  tail = tail.replace("mega-x", "Mega X").replace("mega-y", "Mega Y");
+
+    tail = tail.replace("mega-x", "Mega X").replace("mega-y", "Mega Y");
 
   return titleCaseSlug(tail);
 }
@@ -309,17 +403,11 @@ const pokemonCache = new Map();
 const pokemonExistsCache = new Map();
 const speciesDefaultPokemonCache = new Map();
 const spriteCache = new Map();
-
-// Move caches
-const moveCache = new Map(); // moveName -> move json
-const moveMiniCache = new Map(); // moveName -> {type, dmgClass}
-
-// Ability cache
-const abilityCache = new Map(); // abilityName -> ability json
-
-// Item caches
-const itemCache = new Map(); // itemName -> item json
-const itemCategoryCache = new Map(); // categoryName -> [itemName]
+const moveCache = new Map();
+const moveMiniCache = new Map();
+const abilityCache = new Map();
+const itemCache = new Map();
+const itemCategoryCache = new Map();
 
 const ITEM_CATEGORIES = [
   { key: "held-items", label: "Held Items" },
@@ -342,7 +430,6 @@ async function fetchJsonOrNull(url) {
     const res = await fetch(url);
     if (!res.ok) return null;
     const data = await res.json();
-
     await saveToCache(url, data);
     return data;
   } catch {
@@ -360,8 +447,9 @@ async function pokemonExists(pokemonName) {
 }
 
 async function getDefaultPokemonNameFromSpecies(speciesName) {
-  if (speciesDefaultPokemonCache.has(speciesName))
+  if (speciesDefaultPokemonCache.has(speciesName)) {
     return speciesDefaultPokemonCache.get(speciesName);
+  }
 
   const sData = await fetchJsonOrNull(`https://pokeapi.co/api/v2/pokemon-species/${speciesName}`);
   const def = sData?.varieties?.find((v) => v.is_default)?.pokemon?.name || speciesName;
@@ -404,7 +492,6 @@ async function getSpriteForPokemonName(pokemonName, shiny) {
   return s;
 }
 
-// mini move fetch (type + category) for icons
 async function getMoveMini(moveName) {
   if (moveMiniCache.has(moveName)) return moveMiniCache.get(moveName);
 
@@ -449,7 +536,6 @@ async function getItemsInCategory(categoryName) {
 
 function getEnglishFlavorText(entries) {
   const en = (entries || []).filter((e) => e.language?.name === "en");
-  // first is usually fine; still normalize
   return (en[0]?.text || "").replace(/\f|\n/g, " ").trim();
 }
 
@@ -477,7 +563,6 @@ const TYPES = [
   "fairy",
 ];
 
-// multipliers: attackType -> defendType -> multiplier
 const TYPE_CHART = {
   normal: { rock: 0.5, ghost: 0, steel: 0.5 },
   fire: { fire: 0.5, water: 0.5, grass: 2, ice: 2, bug: 2, rock: 0.5, dragon: 0.5, steel: 2 },
@@ -545,51 +630,85 @@ function typeEffect(atk, def1, def2) {
 ====================== */
 export default function App() {
   const [theme, setTheme] = useState(getInitialTheme);
-
   const [uiZoom, setUiZoom] = useState(() => {
     const saved = localStorage.getItem("pdx-zoom");
     return saved ? Number(saved) : 115;
   });
+  const [mobileTopbarScale, setMobileTopbarScale] = useState(getMobileTopbarScale);
 
-  // NEW: mode switch between Game Dex and Gen-added Pokédex
-  const [dexMode, setDexMode] = useState("game"); // "game" | "gen"
-
+  const [dexMode, setDexMode] = useState("game");
   const [selectedDex, setSelectedDex] = useState("national");
-  const [selectedGen, setSelectedGen] = useState(1); // 1..9
+  const [selectedGen, setSelectedGen] = useState(1);
 
   const [dexEntries, setDexEntries] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const [query, setQuery] = useState("");
-  const [shiny, setShiny] = useState(false);
-  const [typeFilter1, setTypeFilter1] = useState("");
-  const [typeFilter2, setTypeFilter2] = useState("");
+const [query, setQuery] = useState("");
+const [shiny, setShiny] = useState(false);
+const [typeFilterMode, setTypeFilterMode] = useState("single"); // "single" | "dual"
+const [typeFilter1, setTypeFilter1] = useState("");
+const [typeFilter2, setTypeFilter2] = useState("");
+const [topbarSize, setTopbarSize] = useState(() => {
+  return localStorage.getItem("pdx-topbarSize") || "normal"; // "small" | "normal" | "large"
+});
 
   const [openSpecies, setOpenSpecies] = useState(null);
 
-  // move type-color toggle
   const [moveColorMode, setMoveColorMode] = useState(() => {
     const saved = localStorage.getItem("pdx-moveColor");
     return saved === "1";
   });
 
-  // type chart toggle
   const [showTypeChart, setShowTypeChart] = useState(false);
-
-  // items chart toggle (NEW)
   const [showItemsChart, setShowItemsChart] = useState(false);
-
-  // natures chart toggle (NEW)
   const [showNaturesChart, setShowNaturesChart] = useState(false);
 
-  const [downloadProgress, setDownloadProgress] = useState(0);
-  const [downloading, setDownloading] = useState(false);
-  const [downloadOpen, setDownloadOpen] = useState(false);
+  const [showGameDexTabs, setShowGameDexTabs] = useState(true);
+  const [showGenDexTabs, setShowGenDexTabs] = useState(false);
+  const [sizesOpen, setSizesOpen] = useState(false);
+  const [showDexCounts, setShowDexCounts] = useState(() => {
+  return localStorage.getItem("pdx-showDexCounts") === "1";
+});
 
-  const [confirmClear, setConfirmClear] = useState(false);
+    const [downloadProgress, setDownloadProgress] = useState(0);
+const [downloading, setDownloading] = useState(false);
+const [downloadOpen, setDownloadOpen] = useState(false);
+
+const [confirmClear, setConfirmClear] = useState(false);
+
+useEffect(() => {
+  function handleDocClick() {
+    setSizesOpen(false);
+    setDownloadOpen(false);
+  }
+
+  document.addEventListener("click", handleDocClick);
+  return () => document.removeEventListener("click", handleDocClick);
+}, []);
+
+  const sizesBtnRef = useRef(null);
+  const menuBtnRef = useRef(null);
+
+  const [sizesMenuPos, setSizesMenuPos] = useState({ top: 0, left: 0 });
+  const [downloadMenuPos, setDownloadMenuPos] = useState({ top: 0, left: 0 });
+
+  useEffect(() => {
+  function handleResize() {
+    if (sizesOpen) {
+      setSizesMenuPos(getMenuPosition(sizesBtnRef.current, 260));
+    }
+    if (downloadOpen) {
+      setDownloadMenuPos(getMenuPosition(menuBtnRef.current, 240));
+    }
+  }
+
+  window.addEventListener("resize", handleResize);
+  return () => window.removeEventListener("resize", handleResize);
+}, [sizesOpen, downloadOpen]);
+
   useEffect(() => {
     if (!confirmClear) return;
-    const t = setTimeout(() => setConfirmClear(false), 4000); // auto-cancel after 4s
+    const t = setTimeout(() => setConfirmClear(false), 4000);
     return () => clearTimeout(t);
   }, [confirmClear]);
 
@@ -601,14 +720,24 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem("pdx-zoom", String(uiZoom));
   }, [uiZoom]);
+  
+  useEffect(() => {
+  localStorage.setItem("pdx-topbarSize", topbarSize);
+}, [topbarSize]);
+
+  useEffect(() => {
+    localStorage.setItem("pdx-mobileTopbarScale", String(mobileTopbarScale));
+  }, [mobileTopbarScale]);
+
+  useEffect(() => {
+  localStorage.setItem("pdx-showDexCounts", showDexCounts ? "1" : "0");
+}, [showDexCounts]);
 
   useEffect(() => {
     document.body.classList.toggle("moveColorOn", moveColorMode);
     localStorage.setItem("pdx-moveColor", moveColorMode ? "1" : "0");
   }, [moveColorMode]);
-
-  // LOAD ENTRIES (CHANGED: supports both modes)
-  useEffect(() => {
+    useEffect(() => {
     let alive = true;
     setDexEntries([]);
     setLoading(true);
@@ -616,27 +745,37 @@ export default function App() {
     async function load() {
       try {
         if (dexMode === "game") {
-          const res = await fetch(`https://pokeapi.co/api/v2/pokedex/${selectedDex}`);
-          const data = await res.json();
+  if (selectedDex === "unknown") {
+    const list = [
+      { species: "meltan", entryNumber: 1, dex: "unknown" },
+      { species: "melmetal", entryNumber: 2, dex: "unknown" },
+    ];
 
-          const list = data.pokemon_entries
-            .map((e) => ({
-              species: e.pokemon_species.name,
-              entryNumber: e.entry_number,
-              dex: selectedDex,
-            }))
-            .sort((a, b) => a.entryNumber - b.entryNumber);
+    if (!alive) return;
+    setDexEntries(list);
+  } else {
+    const res = await fetch(`https://pokeapi.co/api/v2/pokedex/${selectedDex}`);
+    const data = await res.json();
 
-          if (!alive) return;
-          setDexEntries(list);
-        } else {
+    const list = data.pokemon_entries
+      .map((e) => ({
+        species: e.pokemon_species.name,
+        entryNumber: e.entry_number,
+        dex: selectedDex,
+      }))
+      .sort((a, b) => a.entryNumber - b.entryNumber);
+
+    if (!alive) return;
+    setDexEntries(list);
+  }
+} else {
           const res = await fetch(`https://pokeapi.co/api/v2/generation/${selectedGen}`);
           const data = await res.json();
 
           const list = (data.pokemon_species || [])
             .map((s) => ({
               species: s.name,
-              entryNumber: idFromApiUrl(s.url), // national dex number for the species
+              entryNumber: idFromApiUrl(s.url),
               dex: `gen-${selectedGen}`,
             }))
             .sort((a, b) => a.entryNumber - b.entryNumber);
@@ -660,53 +799,85 @@ export default function App() {
     };
   }, [selectedDex, dexMode, selectedGen]);
 
- const [filtered, setFiltered] = useState([]);
+  const [filtered, setFiltered] = useState([]);
 
-useEffect(() => {
-  let alive = true;
+  useEffect(() => {
+    let alive = true;
 
-  async function runFilter() {
-    const q = query.trim().toLowerCase();
+    async function runFilter() {
+      const q = query.trim().toLowerCase();
 
-    let base = dexEntries.filter((p) => {
-      if (!q) return true;
-      return p.species.includes(q) || String(p.entryNumber) === q;
-    });
+      let base = dexEntries.filter((p) => {
+        if (!q) return true;
+        return p.species.includes(q) || String(p.entryNumber) === q;
+      });
 
-    if (!typeFilter1 && !typeFilter2) {
-      if (alive) setFiltered(base);
-      return;
-    }
-
-    const out = [];
-
-    for (const p of base) {
-      const pData = await getPokemonDataSmart(p.species, selectedDex);
-      const types = (pData?.types || [])
-        .slice()
-        .sort((a, b) => a.slot - b.slot)
-        .map((t) => t.type.name);
-
-      const match1 = !typeFilter1 || types.includes(typeFilter1);
-      const match2 = !typeFilter2 || types.includes(typeFilter2);
-
-      if (match1 && match2) {
-        out.push(p);
+      if (!typeFilter1 && !typeFilter2) {
+        if (alive) setFiltered(base);
+        return;
       }
-    }
 
-    if (alive) setFiltered(out);
+      const out = [];
+
+      for (const p of base) {
+  const filterDexKey = dexMode === "game" ? selectedDex : "national";
+  const pData = await getPokemonDataSmart(p.species, filterDexKey);
+
+  const types = (pData?.types || [])
+    .slice()
+    .sort((a, b) => a.slot - b.slot)
+    .map((t) => t.type.name);
+
+  const match1 = typeFilterMatches(typeFilter1, types);
+
+  let matches = false;
+
+  if (typeFilterMode === "single") {
+    matches = match1;
+  } else {
+    const match2 = typeFilterMatches(typeFilter2, types);
+    matches = match1 && match2;
   }
 
-  runFilter();
+  if (matches) {
+    out.push(p);
+  }
+}
 
-  return () => {
-    alive = false;
-  };
-}, [dexEntries, query, typeFilter1, typeFilter2, selectedDex]);
+      if (alive) setFiltered(out);
+    }
+
+    runFilter();
+
+    return () => {
+      alive = false;
+    };
+  }, [dexEntries, query, typeFilterMode, typeFilter1, typeFilter2, selectedDex, selectedGen, dexMode]);
 
   const clampZoom = (z) => Math.max(70, Math.min(200, z));
   const bumpZoom = (delta) => setUiZoom((z) => clampZoom(z + delta));
+
+  const clampMobileTopbarScale = (z) => Math.max(80, Math.min(120, z));
+  const bumpMobileTopbarScale = (delta) =>
+    setMobileTopbarScale((z) => clampMobileTopbarScale(z + delta));
+
+    function getMenuPosition(buttonEl, menuWidth = 260) {
+    if (!buttonEl) return { top: 0, left: 0 };
+
+    const rect = buttonEl.getBoundingClientRect();
+    const gap = 8;
+    const viewportWidth = window.innerWidth;
+
+    let left = rect.right - menuWidth;
+    let top = rect.bottom + gap;
+
+    if (left < 12) left = 12;
+    if (left + menuWidth > viewportWidth - 12) {
+      left = viewportWidth - menuWidth - 12;
+    }
+
+    return { top, left };
+  }
 
   async function downloadRegional() {
     setDownloading(true);
@@ -735,6 +906,7 @@ useEffect(() => {
 
     setDownloading(false);
   }
+
   async function downloadGeneral() {
     setDownloading(true);
     setDownloadProgress(0);
@@ -757,17 +929,20 @@ useEffect(() => {
 
     setDownloading(false);
   }
+
   async function downloadAll() {
     await downloadRegional();
     await downloadGeneral();
   }
+
   async function clearOfflineCache() {
-    // localStorage (theme, zoom, etc.)
     localStorage.removeItem("pdx-theme");
     localStorage.removeItem("pdx-zoom");
     localStorage.removeItem("pdx-moveColor");
+    localStorage.removeItem("pdx-mobileTopbarScale");
+    localStorage.removeItem("pdx-topbarSize");
+    localStorage.removeItem("pdx-showDexCounts");
 
-    // IndexedDB (if you add it later)
     if (indexedDB?.databases) {
       try {
         const dbs = await indexedDB.databases();
@@ -777,7 +952,6 @@ useEffect(() => {
       } catch {}
     }
 
-    // Cache Storage (service worker / PWA caches, if any)
     if (window.caches?.keys) {
       try {
         const keys = await caches.keys();
@@ -785,16 +959,29 @@ useEffect(() => {
       } catch {}
     }
 
-    // Reload so UI reflects cleared data
     window.location.reload();
   }
 
-  // CHANGED: dexKey passed into cards/modal
   const effectiveDexKey = dexMode === "game" ? selectedDex : "national";
+  const currentGameDexLabel = DEXES.find((d) => d.key === selectedDex)?.label || "Game Dex";
+  const currentGenDexLabel = GEN_DEXES.find((g) => g.id === selectedGen)?.label || "Gen Dex";
 
   return (
-    <div className="wrap">
-      <header className="topbar">
+    <div
+      className="wrap"
+      style={{
+        "--mobile-topbar-scale": `${mobileTopbarScale / 100}`,
+      }}
+    >
+      <header
+  className={`topbar ${
+    topbarSize === "small"
+      ? "size-sm"
+      : topbarSize === "large"
+        ? "size-lg"
+        : "size-md"
+  }`}
+>
         <div className="title">
           <img className="pokeBallIcon" src={uiIconUrl("pokeball.png")} alt="pokeball" />
           GAMERS Pokédex
@@ -807,46 +994,64 @@ useEffect(() => {
           onChange={(e) => setQuery(e.target.value)}
         />
 
-        <select
-  className="entrySelect topFilterSelect"
-  value={typeFilter1}
-  onChange={(e) => setTypeFilter1(e.target.value)}
-  title="Primary type filter"
->
-  <option value="">Any Type</option>
-  {FILTER_TYPES.map((t) => (
-    <option key={t} value={t}>
-      {titleCaseSlug(t)}
-    </option>
-  ))}
-</select>
+        <div className="typeFilterWrap">
+  <select
+    className="entrySelect topFilterSelect"
+    value={typeFilterMode}
+    onChange={(e) => {
+      const nextMode = e.target.value;
+      setTypeFilterMode(nextMode);
+      if (nextMode === "single") setTypeFilter2("");
+    }}
+    title="Type filter mode"
+  >
+    <option value="single">Single Type</option>
+    <option value="dual">Dual Type</option>
+  </select>
 
-<select
-  className="entrySelect topFilterSelect"
-  value={typeFilter2}
-  onChange={(e) => setTypeFilter2(e.target.value)}
-  title="Secondary type filter"
->
-  <option value="">Any Type</option>
-  {FILTER_TYPES
-    .filter((t) => t !== typeFilter1)
-    .map((t) => (
+  <select
+    className="entrySelect topFilterSelect"
+    value={typeFilter1}
+    onChange={(e) => setTypeFilter1(e.target.value)}
+  >
+    <option value="">Any Type</option>
+<option value={SINGLE_TYPE_ONLY}>Single Type Only</option>
+{FILTER_TYPES.map((t) => (
       <option key={t} value={t}>
         {titleCaseSlug(t)}
       </option>
     ))}
-</select>
+  </select>
 
-<button
-  className="themeBtn"
-  onClick={() => {
-    setTypeFilter1("");
-    setTypeFilter2("");
-  }}
-  title="Clear type filters"
->
-  Clear Types
-</button>
+  {typeFilterMode === "dual" && (
+    <select
+      className="entrySelect topFilterSelect"
+      value={typeFilter2}
+      onChange={(e) => setTypeFilter2(e.target.value)}
+    >
+      <option value="">Any Type</option>
+<option value={SINGLE_TYPE_ONLY}>Single Type Only</option>
+{FILTER_TYPES
+        .filter((t) => t !== typeFilter1)
+        .map((t) => (
+          <option key={t} value={t}>
+            {titleCaseSlug(t)}
+          </option>
+        ))}
+    </select>
+  )}
+
+  <button
+    className="themeBtn"
+    onClick={() => {
+      setTypeFilterMode("single");
+      setTypeFilter1("");
+      setTypeFilter2("");
+    }}
+  >
+    Clear Types
+  </button>
+</div>
 
         <label className="toggle">
           <input type="checkbox" checked={shiny} onChange={(e) => setShiny(e.target.checked)} />
@@ -871,6 +1076,8 @@ useEffect(() => {
           </button>
           <span className="small">%</span>
         </div>
+
+        
 
         <button
           className={"themeBtn " + (moveColorMode ? "activeBtn" : "")}
@@ -905,6 +1112,14 @@ useEffect(() => {
         </button>
 
         <button
+  className={"themeBtn " + (showDexCounts ? "activeBtn" : "")}
+  onClick={() => setShowDexCounts((v) => !v)}
+  title="Toggle dex counts"
+>
+  Dex Counts
+</button>
+
+        <button
           className="themeBtn"
           onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
           title="Toggle light/dark"
@@ -912,17 +1127,139 @@ useEffect(() => {
           {theme === "dark" ? "Light" : "Dark"}
         </button>
 
-        <div className="menuWrap">
-          <button
-            className={"themeBtn " + (downloadOpen ? "activeBtn" : "")}
-            onClick={() => setDownloadOpen((v) => !v)}
-            title="Download for offline use"
-          >
-            Download ▾
-          </button>
+        <div className="menuWrap" onClick={(e) => e.stopPropagation()}>
+    <button
+    ref={sizesBtnRef}
+    className={"themeBtn " + (sizesOpen ? "activeBtn" : "")}
+    onClick={() => {
+      setDownloadOpen(false);
+
+      if (!sizesOpen) {
+        setSizesMenuPos(getMenuPosition(sizesBtnRef.current, 260));
+      }
+
+      setSizesOpen((v) => !v);
+    }}
+    title="Size controls"
+  >
+    Sizes ▾
+  </button>
+
+    {sizesOpen && (
+    <div
+      className="menuDrop menuDropSizes"
+      style={{
+        top: `${sizesMenuPos.top}px`,
+        left: `${sizesMenuPos.left}px`,
+      }}
+      onMouseLeave={() => setSizesOpen(false)}
+    >
+      <div className="menuSectionLabel">Top Bar Size</div>
+
+      <button
+        className={"menuItem " + (topbarSize === "small" ? "menuItemActive" : "")}
+        onClick={() => setTopbarSize("small")}
+      >
+        Small
+      </button>
+
+      <button
+        className={"menuItem " + (topbarSize === "normal" ? "menuItemActive" : "")}
+        onClick={() => setTopbarSize("normal")}
+      >
+        Normal
+      </button>
+
+      <button
+        className={"menuItem " + (topbarSize === "large" ? "menuItemActive" : "")}
+        onClick={() => setTopbarSize("large")}
+      >
+        Large
+      </button>
+
+      <div className="menuDivider" />
+
+      <div className="menuSectionLabel">Mobile Top Bar Scale</div>
+      <div className="menuZoomRow">
+        <button className="zoomBtn" onClick={() => bumpMobileTopbarScale(-5)}>
+          -
+        </button>
+        <input
+          className="zoomInput"
+          value={mobileTopbarScale}
+          onChange={(e) => {
+            const raw = e.target.value.replace(/[^\d]/g, "");
+            const n = raw ? Number(raw) : 0;
+            setMobileTopbarScale(clampMobileTopbarScale(n));
+          }}
+        />
+        <button className="zoomBtn" onClick={() => bumpMobileTopbarScale(5)}>
+          +
+        </button>
+        <span className="small">%</span>
+      </div>
+
+      <div className="menuDivider" />
+
+      <div className="menuSectionLabel">Dex Size</div>
+      <div className="menuZoomRow">
+        <button className="zoomBtn" onClick={() => bumpZoom(-5)}>
+          -
+        </button>
+        <input
+          className="zoomInput"
+          value={uiZoom}
+          onChange={(e) => {
+            const raw = e.target.value.replace(/[^\d]/g, "");
+            const n = raw ? Number(raw) : 0;
+            setUiZoom(clampZoom(n));
+          }}
+        />
+        <button className="zoomBtn" onClick={() => bumpZoom(5)}>
+          +
+        </button>
+        <span className="small">%</span>
+      </div>
+    </div>
+  )}
+</div>    
+
+        <div className="menuWrap" onClick={(e) => e.stopPropagation()}>
+            <button
+    ref={menuBtnRef}
+    className={"themeBtn " + (downloadOpen ? "activeBtn" : "")}
+    onClick={() => {
+      setSizesOpen(false);
+
+      if (!downloadOpen) {
+        setDownloadMenuPos(getMenuPosition(menuBtnRef.current, 240));
+      }
+
+      setDownloadOpen((v) => !v);
+    }}
+    title="Download and cache menu"
+  >
+    Menu ▾
+  </button>
 
           {downloadOpen && (
-            <div className="menuDrop" onMouseLeave={() => setDownloadOpen(false)}>
+  <div
+    className="menuDrop menuDropMain"
+    style={{
+      top: `${downloadMenuPos.top}px`,
+      left: `${downloadMenuPos.left}px`,
+    }}
+    onMouseLeave={() => setDownloadOpen(false)}
+  >
+    <div className="menuSectionLabel">Current Selection</div>
+    <div className="menuInfoLine small">
+      {dexMode === "game" ? currentGameDexLabel : currentGenDexLabel}
+    </div>
+
+    <div className="menuDivider" />
+
+    <div className="menuSectionLabel">Downloads</div>
+
               <button
                 className="menuItem"
                 onClick={() => {
@@ -940,36 +1277,39 @@ useEffect(() => {
                   downloadRegional();
                 }}
               >
-                Download This Dex
+                Download Current Game Dex
               </button>
 
               <button
-                className="menuItem"
+  className="menuItem"
+  onClick={() => {
+    setDownloadOpen(false);
+  }}
+>
+  Download Current Pokémon
+</button>
+
+<div className="menuDivider" />
+
+<div className="menuSectionLabel">Storage</div>
+
+              <button
+                className={"menuItem " + (confirmClear ? "menuDangerItem" : "")}
                 onClick={() => {
+                  if (!confirmClear) {
+                    setConfirmClear(true);
+                    return;
+                  }
+                  setConfirmClear(false);
                   setDownloadOpen(false);
-                  // (kept placeholder – no current-pokemon downloader in your script)
+                  clearOfflineCache();
                 }}
               >
-                Download Current Pokémon
+                {confirmClear ? "Confirm Delete Cache" : "Delete Cache"}
               </button>
             </div>
           )}
         </div>
-
-        <button
-          className={"themeBtn " + (confirmClear ? "dangerBtn" : "")}
-          onClick={() => {
-            if (!confirmClear) {
-              setConfirmClear(true);
-              return;
-            }
-            setConfirmClear(false);
-            clearOfflineCache();
-          }}
-          title="Clear downloaded data and settings"
-        >
-          {confirmClear ? "Confirm Delete" : "Delete Cache"}
-        </button>
       </header>
 
       {downloading && (
@@ -978,42 +1318,61 @@ useEffect(() => {
         </div>
       )}
 
-      {/* zoom affects ONLY this area */}
       <div className="dexZoomArea" style={{ zoom: uiZoom / 100 }}>
-        {/* TOP ROW: Game Dex (kept as-is) */}
-        <div className="tabs">
-          {DEXES.map((d) => (
-            <button
-              key={d.key}
-              className={"tab " + (dexMode === "game" && selectedDex === d.key ? "active" : "")}
-              onClick={() => {
-                setDexMode("game");
-                setSelectedDex(d.key);
-              }}
-            >
-              {d.label}
-            </button>
-          ))}
+              <div className="tabsToggleRow">
+          <button
+            className={"themeBtn topbarCompactBtn " + (showGameDexTabs ? "activeBtn" : "")}
+            onClick={() => setShowGameDexTabs((v) => !v)}
+            title="Show or hide game dex row"
+          >
+            {showGameDexTabs ? "− Game Dexes" : "+ Game Dexes"}
+          </button>
+
+          <button
+            className={"themeBtn topbarCompactBtn " + (showGenDexTabs ? "activeBtn" : "")}
+            onClick={() => setShowGenDexTabs((v) => !v)}
+            title="Show or hide generation dex row"
+          >
+            {showGenDexTabs ? "− Gen Dexes" : "+ Gen Dexes"}
+          </button>
         </div>
 
-        {/* NEW BOTTOM ROW: Gen-added Pokédex */}
-        <div className="tabs">
-          {GEN_DEXES.map((g) => (
-            <button
-              key={g.key}
-              className={"tab " + (dexMode === "gen" && selectedGen === g.id ? "active" : "")}
-              onClick={() => {
-                setDexMode("gen");
-                setSelectedGen(g.id);
-              }}
-              title="Pokémon introduced in this generation"
-            >
-              {g.label}
-            </button>
-          ))}
-        </div>
+        {showGameDexTabs && (
+          <div className="tabs">
+            {DEXES.map((d) => (
+              <button
+                key={d.key}
+                className={"tab " + (dexMode === "game" && selectedDex === d.key ? "active" : "")}
+                onClick={() => {
+                  setDexMode("game");
+                  setSelectedDex(d.key);
+                }}
+              >
+                {formatDexTabLabel(d.label, d.count, showDexCounts)}
+              </button>
+            ))}
+          </div>
+        )}
 
-        <main className="main">
+        {showGenDexTabs && (
+          <div className="tabs">
+            {GEN_DEXES.map((g) => (
+              <button
+                key={g.key}
+                className={"tab " + (dexMode === "gen" && selectedGen === g.id ? "active" : "")}
+                onClick={() => {
+                  setDexMode("gen");
+                  setSelectedGen(g.id);
+                }}
+                title="Pokémon introduced in this generation"
+              >
+                {formatDexTabLabel(g.label, g.count, showDexCounts)}
+              </button>
+            ))}
+          </div>
+        )}
+
+  <main className="main">
           {loading ? (
             <div className="status">Loading dex…</div>
           ) : (
@@ -1082,7 +1441,7 @@ function PokemonCard({ species, entryNumber, dexKey, shiny, onOpen }) {
       if (!cancelled) {
         setSprite(s);
         setPrimaryType(pType);
-        setDisplayName(pName);
+        setDisplayName(normalizeDisplayPokemonName(pName));
       }
     }
 
@@ -1129,14 +1488,11 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
   const [evoSprites, setEvoSprites] = useState({});
 
   const displayPokemonName = selectedForm || selectedVariant;
+  const hideSpriteGenderToggle = hasDistinctGenderForms(displayPokemonName);
 
-  // Sprite gender toggle
-  const [spriteGender, setSpriteGender] = useState("default");
-
-  // ✅ ALLOW FEMALE TOGGLE EVEN WITHOUT FEMALE SPRITES (set false to disable)
+  const [spriteGender, setSpriteGender] = useState("male");
   const ALLOW_GENDER_TOGGLE_WITHOUT_SPRITES = true;
 
-  // Movepool state
   const [movesOpen, setMovesOpen] = useState(false);
   const [moveGen, setMoveGen] = useState("all");
   const [moveSearch, setMoveSearch] = useState("");
@@ -1149,19 +1505,14 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
     other: [],
   });
 
-  // Toggle: show all generation text changes in move popup
   const [showAllMoveGenText, setShowAllMoveGenText] = useState(false);
-
-  // Toggle: show older generation text in ability popup
   const [showAllAbilityGenText, setShowAllAbilityGenText] = useState(false);
 
-  // Move popup
   const [movePopupOpen, setMovePopupOpen] = useState(false);
   const [selectedMove, setSelectedMove] = useState("");
   const [moveDetails, setMoveDetails] = useState(null);
   const [moveDetailsLoading, setMoveDetailsLoading] = useState(false);
 
-  // Ability popup (NEW)
   const [abilityPopupOpen, setAbilityPopupOpen] = useState(false);
   const [selectedAbility, setSelectedAbility] = useState("");
   const [abilityData, setAbilityData] = useState(null);
@@ -1179,8 +1530,7 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
     for (let g = pokemonMinGen; g <= CURRENT_GEN; g++) arr.push(g);
     return arr;
   }, [pokemonMinGen]);
-
-  useEffect(() => {
+    useEffect(() => {
     let alive = true;
 
     setLoading(true);
@@ -1204,7 +1554,6 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
     setEvoEdges([]);
     setEvoSprites({});
 
-    // reset moves
     setMovesOpen(false);
     setSpriteGender("male");
     setMoveGen("all");
@@ -1225,7 +1574,6 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
     setMoveDetails(null);
     setMoveDetailsLoading(false);
 
-    // reset ability popup
     setAbilityPopupOpen(false);
     setSelectedAbility("");
     setAbilityData(null);
@@ -1241,7 +1589,6 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
         if (!alive) return;
         setSpecies(sData);
 
-        // Entries
         const map = {};
         for (const x of sData.flavor_text_entries || []) {
           if (x.language?.name !== "en") continue;
@@ -1273,7 +1620,6 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
         const basePoke = await fetchJsonOrNull(`https://pokeapi.co/api/v2/pokemon/${baseName}`);
         if (basePoke) pokemonCache.set(baseName, basePoke);
 
-        // Variant/form lists (ONLY include real /pokemon/ names so clicking never crashes)
         (async () => {
           try {
             const varietiesRaw = (sData.varieties || []).map((v) => v.pokemon?.name).filter(Boolean);
@@ -1287,16 +1633,25 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
             const others = [];
 
             for (const pnm of allCandidates) {
-              const ok = await pokemonExists(pnm);
-              if (!ok) continue;
+  const ok = await pokemonExists(pnm);
+  if (!ok) continue;
 
-              const label = prettyLabel(baseName, pnm);
+  const label = prettyLabel(baseName, pnm);
 
-              if (pnm === baseName || isRegionalVariant(pnm)) variants.push({ label, pokemonName: pnm });
-              else if (isMega(pnm)) megas.push({ label, pokemonName: pnm });
-              else if (isGmax(pnm)) gmax.push({ label, pokemonName: pnm });
-              else others.push({ label, pokemonName: pnm });
-            }
+  if (
+    pnm === baseName ||
+    isRegionalVariant(pnm) ||
+    hasDistinctGenderForms(pnm)
+  ) {
+    variants.push({ label, pokemonName: pnm });
+  } else if (isMega(pnm)) {
+    megas.push({ label, pokemonName: pnm });
+  } else if (isGmax(pnm)) {
+    gmax.push({ label, pokemonName: pnm });
+  } else {
+    others.push({ label, pokemonName: pnm });
+  }
+}
 
             if (!variants.some((o) => o.pokemonName === baseName)) {
               variants.unshift({ label: "Base", pokemonName: baseName });
@@ -1337,7 +1692,6 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
           }
         })();
 
-        // Evolution chain
         (async () => {
           try {
             const evoUrl = sData.evolution_chain?.url;
@@ -1383,7 +1737,6 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
     };
   }, [speciesName, dexKey]);
 
-  // Load displayed pokemon when variant/form changes
   useEffect(() => {
     let alive = true;
 
@@ -1395,7 +1748,6 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
         pokemonCache.set(displayPokemonName, data);
         setPokemon(data);
 
-        // reset moves
         setMovesReady(false);
         setMovesByMethod({
           "level-up": [],
@@ -1405,13 +1757,11 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
           other: [],
         });
 
-        // close move popup
         setMovePopupOpen(false);
         setSelectedMove("");
         setMoveDetails(null);
         setMoveDetailsLoading(false);
 
-        // close ability popup
         setAbilityPopupOpen(false);
         setSelectedAbility("");
         setAbilityData(null);
@@ -1432,7 +1782,6 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
     return getSpriteForPokemonName(def, false);
   }
 
-  // Build move list
   useEffect(() => {
     let alive = true;
 
@@ -1475,7 +1824,6 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
 
         if (matching.length === 0) continue;
 
-        // pick best (prefer earliest level-up)
         let best = matching[0];
         for (const d of matching) {
           if (d.move_learn_method?.name === "level-up") {
@@ -1493,10 +1841,9 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
             : method === "tutor"
             ? "tutor"
             : method === "egg"
-            ? "egg"
-            : "other";
+              ? "egg"
+              : "other";
 
-        // prefetch mini info for type/category
         getMoveMini(moveName);
 
         out[bucket].push({
@@ -1528,7 +1875,6 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
     };
   }, [pokemon?.name, pokemon?.moves, moveGen, moveSearch]);
 
-  // Load move details for popup
   useEffect(() => {
     let alive = true;
 
@@ -1562,7 +1908,6 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
     };
   }, [selectedMove]);
 
-  // Ability popup load (NEW)
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -1611,7 +1956,7 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
 
   const genus = (species.genera || []).find((g) => g.language?.name === "en")?.genus || "";
 
-  const eggGroups = (species.egg_groups || []).map((e) => titleCaseSlug(e.name)).join(", ");
+  const eggGroups = formatEggGroups(species.egg_groups || []);
   const growthRate = titleCaseSlug(species.growth_rate?.name || "");
 
   const baseTotal = (pokemon.stats || []).reduce((sum, s) => sum + (s.base_stat || 0), 0);
@@ -1624,7 +1969,7 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
       <div className={`modal modalType type-${primaryType}`} onClick={(e) => e.stopPropagation()}>
         <div className="modalHead">
           <div className="modalTitle">
-            {titleCaseSlug(pokemon.name)} <span className="small">#{pad3(pokemon.id)}</span>
+            {titleCaseSlug(normalizeDisplayPokemonName(pokemon.name))} <span className="small">#{pad3(pokemon.id)}</span>
           </div>
           <button className="x" onClick={onClose}>
             ×
@@ -1636,38 +1981,39 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
               <img className="spriteBig" src={sprite} alt={pokemon.name} />
 
-              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", justifyContent: "center" }}>
-                <button
-                  className={"themeBtn " + (spriteGender === "default" ? "activeBtn" : "")}
-                  onClick={() => setSpriteGender("default")}
-                  title="Default sprite (usually male/default)"
-                >
-                  Default
-                </button>
+              {!hideSpriteGenderToggle && (
+                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", justifyContent: "center" }}>
+                  <button
+                    className={"themeBtn " + (spriteGender === "male" ? "activeBtn" : "")}
+                    onClick={() => setSpriteGender("male")}
+                    title="Male/default sprite"
+                  >
+                    Male
+                  </button>
 
-                <button
-                  className={"themeBtn " + (spriteGender === "female" ? "activeBtn" : "")}
-                  onClick={() => setSpriteGender("female")}
-                  disabled={
-                    !ALLOW_GENDER_TOGGLE_WITHOUT_SPRITES &&
-                    !pokemon?.sprites?.front_female &&
-                    !pokemon?.sprites?.front_shiny_female
-                  }
-                  title={
-                    hasFemaleSprite
-                      ? "Female sprite"
-                      : ALLOW_GENDER_TOGGLE_WITHOUT_SPRITES
-                      ? "No separate female sprite in PokeAPI — will fall back to default sprite"
-                      : "No female sprite available for this Pokémon"
-                  }
-                >
-                  Female
-                </button>
-              </div>
+                  <button
+                    className={"themeBtn " + (spriteGender === "female" ? "activeBtn" : "")}
+                    onClick={() => setSpriteGender("female")}
+                    disabled={
+                      !ALLOW_GENDER_TOGGLE_WITHOUT_SPRITES &&
+                      !pokemon?.sprites?.front_female &&
+                      !pokemon?.sprites?.front_shiny_female
+                    }
+                    title={
+                      hasFemaleSprite
+                        ? "Female sprite"
+                        : ALLOW_GENDER_TOGGLE_WITHOUT_SPRITES
+                          ? "No separate female sprite in PokeAPI — will fall back to default sprite"
+                          : "No female sprite available for this Pokémon"
+                    }
+                  >
+                    Female
+                  </button>
+                </div>
+              )}
             </div>
 
             <div className="col">
-              {/* Types */}
               <div className="badges">
                 {typesSorted.map((t) => {
                   const typeName = t.type.name;
@@ -1688,7 +2034,6 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
                 })}
               </div>
 
-              {/* Variant / Form split */}
               <div className="vfWrap">
                 <div className="vfRow">
                   <div className="vfLabel">Variant:</div>
@@ -1696,7 +2041,7 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
                     <div className="small">Loading…</div>
                   ) : (
                     <select
-                      className="entrySelect vfSelect"
+                      className="entrySelect vfSelect compactSelect"
                       value={selectedVariant}
                       onChange={(e) => {
                         setSelectedVariant(e.target.value);
@@ -1720,7 +2065,7 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
                     <div className="small">None</div>
                   ) : (
                     <select
-                      className="entrySelect vfSelect"
+                      className="entrySelect vfSelect compactSelect"
                       value={selectedForm}
                       onChange={(e) => setSelectedForm(e.target.value)}
                     >
@@ -1782,7 +2127,7 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
                   <span className="k">Base EXP:</span> {pokemon.base_experience}
                 </div>
                 <div>
-                  <span className="k">Gender:</span> {genderRateToText(species.gender_rate)}
+                  <span className="k">Gender:</span> {getDisplayedGenderText(species, displayPokemonName)}
                 </div>
                 <div>
                   <span className="k">Egg Groups:</span> {eggGroups || "—"}
@@ -1803,7 +2148,6 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
             </div>
           </div>
 
-          {/* Moves */}
           <div className="panel">
             <div className="panelTitle dexEntryHeader">
               <span>Moves</span>
@@ -1816,7 +2160,6 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
                   {movesOpen ? "−" : "+"}
                 </button>
 
-                {/* NEW: toggle right next to minimize/maximize */}
                 <button
                   className={"miniToggleBtn " + (showAllMoveGenText ? "activeBtn" : "")}
                   onClick={() => setShowAllMoveGenText((v) => !v)}
@@ -1870,7 +2213,6 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
             )}
           </div>
 
-          {/* Evolution */}
           <div className="panel">
             <div className="panelTitle">Evolution</div>
 
@@ -1908,7 +2250,6 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
             )}
           </div>
 
-          {/* Dex Entry */}
           <div className="panel">
             <div className="panelTitle dexEntryHeader">
               <span>Dex Entry</span>
@@ -1925,7 +2266,6 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
             <div className="panelText">{entryMap[entryVersion] || "No English entry found."}</div>
           </div>
 
-          {/* Abilities (CHANGED: click opens card popup, no vague under-text) */}
           <div className="panel">
             <div className="panelTitle dexEntryHeader">
               <span>Abilities</span>
@@ -1974,7 +2314,6 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
             )}
           </div>
 
-          {/* Stats */}
           <div className="panel">
             <div className="panelTitle statsHeader">
               <span>Stats</span>
@@ -2020,7 +2359,6 @@ function DetailsModal({ speciesName, dexKey, shiny, onClose, onOpenSpecies }) {
             </div>
           </div>
 
-          {/* Move Popup (PORTAL to body so it follows properly) */}
           {movePopupOpen && (
             <MovePopup
               moveName={selectedMove}
@@ -2163,7 +2501,6 @@ function MoveRow({ kind, moveName, labelLeft, labelRight, onClick }) {
     </button>
   );
 }
-
 /* ======================
    Move Popup (PORTAL)
 ====================== */
@@ -2214,10 +2551,8 @@ function MoveDetails({ move, showAllGenText, selectedGen }) {
   const prio = move?.priority ?? 0;
 
   const target = move?.target?.name ? titleCaseSlug(move.target.name) : "—";
-  // Resolve version-group -> generation numbers so "latest" is always correct (SV > SwSh)
   const [annotated, setAnnotated] = useState([]);
 
-  // Version-group-specific move text
   const flavorEn = (move.flavor_text_entries || [])
     .filter((e) => e.language?.name === "en")
     .map((e) => ({
@@ -2237,7 +2572,7 @@ function MoveDetails({ move, showAllGenText, selectedGen }) {
       const withGen = await Promise.all(
         unique.map(async (x) => ({
           ...x,
-          gen: await getVersionGroupGenNumber(x.vg), // fetches if missing, cached after
+          gen: await getVersionGroupGenNumber(x.vg),
         }))
       );
 
@@ -2268,8 +2603,6 @@ function MoveDetails({ move, showAllGenText, selectedGen }) {
       if (exact.length) {
         shown = exact;
       } else {
-        // No text for the selected gen — pick the closest gen.
-        // Prefer the NEXT gen (e.g., Gen 1 -> Gen 2) before going backward.
         const gens = Array.from(
           new Set(annotated.map((x) => x.gen).filter((g) => Number.isFinite(g) && g !== 999))
         ).sort((a, b) => a - b);
@@ -2287,12 +2620,10 @@ function MoveDetails({ move, showAllGenText, selectedGen }) {
         }
       }
     } else {
-      // All Gens + toggle OFF => newest entry
       shown = annotated.slice(-1);
     }
   }
 
-  // mechanics text (often more complete than flavor)
   const effectEntry = (move.effect_entries || []).find((e) => e.language?.name === "en");
   const shortEffect = (effectEntry?.short_effect || "").replace(/\f|\n/g, " ").trim();
   const effect = (effectEntry?.effect || "").replace(/\f|\n/g, " ").trim();
@@ -2579,7 +2910,7 @@ function TypeChartCard({ onClose }) {
 }
 
 /* ======================
-   Items chart card (NEW: scrollable + searchable + clickable)
+   Items chart card
 ====================== */
 function ItemsChartCard({ onClose }) {
   const [category, setCategory] = useState("held-items");
@@ -2763,7 +3094,7 @@ function ItemDetails({ item }) {
 }
 
 /* ======================
-   Natures chart card (simple + scrollable)
+   Natures chart card
 ====================== */
 const NATURES = [
   { name: "Hardy", up: null, down: null },
@@ -2824,9 +3155,9 @@ function NaturesChartCard({ onClose }) {
               <div className="k">{n.name}</div>
               <div className="panelText" style={{ marginTop: "6px" }}>
                 {n.up && n.down ? (
-                  <>
+                  <span>
                     <b>↑ {n.up}</b> &nbsp;|&nbsp; <b>↓ {n.down}</b>
-                  </>
+                  </span>
                 ) : (
                   "Neutral (no stat changes)"
                 )}
