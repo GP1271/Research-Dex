@@ -311,6 +311,10 @@ body.light .panel{
   border: 1px solid rgba(255,255,255,0.18);
   font-weight: 900;
 }
+.topFilterSelect{
+  min-width: 140px;
+  max-width: 170px;
+}
 .entrySelect option{ color: #111; background: #fff; }
 body.light .entrySelect{
   background: rgba(0,0,0,0.05);
@@ -909,5 +913,19 @@ html, body, .wrap {
 
   .topbar .search {
     flex: 1 1 100%;
+  }
+  .topFilterSelect{
+    min-width: 120px;
+    max-width: 100%;
+  }
+}
+/* ===== MOBILE: always show Delete Cache button ===== */
+@media (max-width: 900px) {
+  /* Force Delete Cache to take a full row so it never gets hidden */
+  .topbar > .themeBtn.dangerBtn,
+  .topbar > .themeBtn:not(.activeBtn):last-of-type {
+    flex: 1 1 100%;
+    width: 100%;
+    text-align: center;
   }
 }

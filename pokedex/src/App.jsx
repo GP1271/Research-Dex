@@ -39,6 +39,27 @@ const GEN_DEXES = [
 const pad3 = (n) => String(n).padStart(3, "0");
 const CURRENT_GEN = 9;
 
+const FILTER_TYPES = [
+  "normal",
+  "fire",
+  "water",
+  "grass",
+  "electric",
+  "ice",
+  "fighting",
+  "poison",
+  "ground",
+  "flying",
+  "psychic",
+  "bug",
+  "rock",
+  "ghost",
+  "dragon",
+  "dark",
+  "steel",
+  "fairy",
+];
+
 /* ======================
    Vite base-path safe assets
 ====================== */
@@ -541,6 +562,8 @@ export default function App() {
 
   const [query, setQuery] = useState("");
   const [shiny, setShiny] = useState(false);
+  const [typeFilter1, setTypeFilter1] = useState("");
+  const [typeFilter2, setTypeFilter2] = useState("");
 
   const [openSpecies, setOpenSpecies] = useState(null);
 
@@ -637,11 +660,50 @@ export default function App() {
     };
   }, [selectedDex, dexMode, selectedGen]);
 
-  const filtered = useMemo(() => {
+ const [filtered, setFiltered] = useState([]);
+
+useEffect(() => {
+  let alive = true;
+
+  async function runFilter() {
     const q = query.trim().toLowerCase();
-    if (!q) return dexEntries;
-    return dexEntries.filter((p) => p.species.includes(q) || String(p.entryNumber) === q);
-  }, [dexEntries, query]);
+
+    let base = dexEntries.filter((p) => {
+      if (!q) return true;
+      return p.species.includes(q) || String(p.entryNumber) === q;
+    });
+
+    if (!typeFilter1 && !typeFilter2) {
+      if (alive) setFiltered(base);
+      return;
+    }
+
+    const out = [];
+
+    for (const p of base) {
+      const pData = await getPokemonDataSmart(p.species, selectedDex);
+      const types = (pData?.types || [])
+        .slice()
+        .sort((a, b) => a.slot - b.slot)
+        .map((t) => t.type.name);
+
+      const match1 = !typeFilter1 || types.includes(typeFilter1);
+      const match2 = !typeFilter2 || types.includes(typeFilter2);
+
+      if (match1 && match2) {
+        out.push(p);
+      }
+    }
+
+    if (alive) setFiltered(out);
+  }
+
+  runFilter();
+
+  return () => {
+    alive = false;
+  };
+}, [dexEntries, query, typeFilter1, typeFilter2, selectedDex]);
 
   const clampZoom = (z) => Math.max(70, Math.min(200, z));
   const bumpZoom = (delta) => setUiZoom((z) => clampZoom(z + delta));
@@ -744,6 +806,47 @@ export default function App() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
+
+        <select
+  className="entrySelect topFilterSelect"
+  value={typeFilter1}
+  onChange={(e) => setTypeFilter1(e.target.value)}
+  title="Primary type filter"
+>
+  <option value="">Any Type</option>
+  {FILTER_TYPES.map((t) => (
+    <option key={t} value={t}>
+      {titleCaseSlug(t)}
+    </option>
+  ))}
+</select>
+
+<select
+  className="entrySelect topFilterSelect"
+  value={typeFilter2}
+  onChange={(e) => setTypeFilter2(e.target.value)}
+  title="Secondary type filter"
+>
+  <option value="">Any Type</option>
+  {FILTER_TYPES
+    .filter((t) => t !== typeFilter1)
+    .map((t) => (
+      <option key={t} value={t}>
+        {titleCaseSlug(t)}
+      </option>
+    ))}
+</select>
+
+<button
+  className="themeBtn"
+  onClick={() => {
+    setTypeFilter1("");
+    setTypeFilter2("");
+  }}
+  title="Clear type filters"
+>
+  Clear Types
+</button>
 
         <label className="toggle">
           <input type="checkbox" checked={shiny} onChange={(e) => setShiny(e.target.checked)} />
