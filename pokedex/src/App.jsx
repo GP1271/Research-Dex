@@ -17,6 +17,7 @@ const DEXES = [
   { key: "kalos-central", label: "Kalos", count: 150 },
   { key: "updated-alola", label: "Alola", count: 403 },
   { key: "galar", label: "Galar", count: 400 },
+  { key: "hisui", label: "Hisui", count: 242 },
   { key: "paldea", label: "Paldea", count: 400 },
   { key: "unknown", label: "Unidentified", count: 2 },
 ];
@@ -392,10 +393,10 @@ function prettyLabel(baseName, pokemonName) {
 function regionSuffixForDex(dexKey) {
   if (dexKey.includes("alola")) return "alola";
   if (dexKey === "galar") return "galar";
+  if (dexKey === "hisui") return "hisui";
   if (dexKey === "paldea") return "paldea";
   return null;
 }
-
 /* ======================
    Data caches
 ====================== */
@@ -459,19 +460,56 @@ async function getDefaultPokemonNameFromSpecies(speciesName) {
 }
 
 async function getPokemonDataSmart(speciesName, dexKey) {
-  const suffix = regionSuffixForDex(dexKey);
   const defaultPokemon = await getDefaultPokemonNameFromSpecies(speciesName);
 
-  if (suffix) {
-    const candidate = `${defaultPokemon}-${suffix}`;
-    const ok = await pokemonExists(candidate);
-    if (ok) return pokemonCache.get(candidate);
+  const candidates = [];
+
+  const suffix = regionSuffixForDex(dexKey);
+  if (suffix) candidates.push(`${defaultPokemon}-${suffix}`);
+
+  // Gen 8 contains both Hisui and Galar regional forms
+  if (dexKey === "gen-8") {
+    candidates.push(`${defaultPokemon}-hisui`);
+    candidates.push(`${defaultPokemon}-galar`);
   }
 
-  if (await pokemonExists(defaultPokemon)) return pokemonCache.get(defaultPokemon);
-  if (await pokemonExists(speciesName)) return pokemonCache.get(speciesName);
+  candidates.push(defaultPokemon);
+  candidates.push(speciesName);
+
+  for (const candidate of [...new Set(candidates)]) {
+    if (await pokemonExists(candidate)) {
+      return pokemonCache.get(candidate);
+    }
+  }
 
   return null;
+}
+
+async function getPokemonFormsForFilter(speciesName, dexKey) {
+  const defaultPokemon = await getDefaultPokemonNameFromSpecies(speciesName);
+
+  const candidates = new Set([
+    defaultPokemon,
+    speciesName,
+    `${defaultPokemon}-alola`,
+    `${defaultPokemon}-galar`,
+    `${defaultPokemon}-hisui`,
+    `${defaultPokemon}-paldea`,
+  ]);
+
+  const suffix = regionSuffixForDex(dexKey);
+  if (suffix) candidates.add(`${defaultPokemon}-${suffix}`);
+
+  const out = [];
+
+  for (const candidate of candidates) {
+    if (await pokemonExists(candidate)) {
+      const data = pokemonCache.get(candidate);
+      if (data) out.push(data);
+    }
+  }
+
+  return out;
 }
 
 async function getSpriteForPokemonName(pokemonName, shiny) {
@@ -753,6 +791,40 @@ useEffect(() => {
 
     if (!alive) return;
     setDexEntries(list);
+  } else if (selectedDex === "hisui") {
+    const res = await fetch(`https://pokeapi.co/api/v2/pokedex/national`);
+    const data = await res.json();
+
+    const hisuiSpecies = [
+      "growlithe",
+      "arcanine",
+      "voltorb",
+      "electrode",
+      "typhlosion",
+      "qwilfish",
+      "sneasel",
+      "samurott",
+      "lilligant",
+      "zorua",
+      "zoroark",
+      "braviary",
+      "sliggoo",
+      "goodra",
+      "avalugg",
+      "decidueye",
+    ];
+
+    const list = data.pokemon_entries
+      .filter((e) => hisuiSpecies.includes(e.pokemon_species.name))
+      .map((e) => ({
+        species: e.pokemon_species.name,
+        entryNumber: e.entry_number,
+        dex: "hisui",
+      }))
+      .sort((a, b) => a.entryNumber - b.entryNumber);
+
+    if (!alive) return;
+    setDexEntries(list);
   } else {
     const res = await fetch(`https://pokeapi.co/api/v2/pokedex/${selectedDex}`);
     const data = await res.json();
@@ -820,23 +892,44 @@ useEffect(() => {
       const out = [];
 
       for (const p of base) {
-  const filterDexKey = dexMode === "game" ? selectedDex : "national";
-  const pData = await getPokemonDataSmart(p.species, filterDexKey);
+  const defaultPokemon = await getDefaultPokemonNameFromSpecies(p.species);
 
-  const types = (pData?.types || [])
-    .slice()
-    .sort((a, b) => a.slot - b.slot)
-    .map((t) => t.type.name);
-
-  const match1 = typeFilterMatches(typeFilter1, types);
+  const formCandidates = Array.from(
+    new Set([
+      defaultPokemon,
+      `${defaultPokemon}-alola`,
+      `${defaultPokemon}-galar`,
+      `${defaultPokemon}-hisui`,
+      `${defaultPokemon}-paldea`,
+    ])
+  );
 
   let matches = false;
 
-  if (typeFilterMode === "single") {
-    matches = match1;
-  } else {
-    const match2 = typeFilterMatches(typeFilter2, types);
-    matches = match1 && match2;
+  for (const formName of formCandidates) {
+    const ok = await pokemonExists(formName);
+    if (!ok) continue;
+
+    const data = pokemonCache.get(formName);
+    const types = (data?.types || [])
+      .slice()
+      .sort((a, b) => a.slot - b.slot)
+      .map((t) => t.type.name);
+
+    const match1 = typeFilterMatches(typeFilter1, types);
+
+    if (typeFilterMode === "single") {
+      if (match1) {
+        matches = true;
+        break;
+      }
+    } else {
+      const match2 = typeFilterMatches(typeFilter2, types);
+      if (match1 && match2) {
+        matches = true;
+        break;
+      }
+    }
   }
 
   if (matches) {
